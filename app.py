@@ -26,18 +26,27 @@ def get_all_statcan_cubes():
         st.error(f"Erreur lors de la connexion à Statistique Canada : {e}")
         return []
 
-
 @st.cache_data(show_spinner=False)
 def get_cube_metadata(product_id):
     url = f"https://www150.statcan.gc.ca/t1/wds/rest/getCubeMetadata/{product_id}"
-    response = requests.get(url)
-    return response.json().get("object", {})
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.json().get("object", {})
+    except Exception as e:
+        st.error(f"Erreur lors de la récupération du metadata : {e}")
+        return {}
 
 @st.cache_data(show_spinner=False)
 def get_vector_data(vector_id):
     url = f"https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVector/{vector_id}"
-    response = requests.get(url)
-    return pd.DataFrame(response.json().get("object", []))
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return pd.DataFrame(response.json().get("object", []))
+    except Exception as e:
+        st.error(f"Erreur lors de la récupération des données : {e}")
+        return pd.DataFrame()
 
 # ---- Recherche interactive dans Statistique Canada ----
 with st.sidebar:
@@ -96,7 +105,8 @@ if not data.empty:
 else:
     st.warning("Aucune donnée disponible pour cette combinaison pays/source.")
 
-    st.markdown("## 🧪 Test manuel avec un vecteur connu (Québec – Taux de chômage)")
+# 🧪 Test manuel avec un vecteur connu (Québec – Taux de chômage)
+st.markdown("## 🧪 Test manuel avec un vecteur connu (Québec – Taux de chômage)")
 vector_test_id = "v123985190"
 
 try:
@@ -112,7 +122,6 @@ try:
         st.error("Aucune donnée retournée pour ce vecteur.")
 except Exception as e:
     st.error(f"Erreur lors du test du vecteur : {e}")
-
 
 # ---- Note pied de page ----
 st.markdown("""
