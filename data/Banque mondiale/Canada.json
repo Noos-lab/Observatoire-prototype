@@ -1,0 +1,32 @@
+[
+  {
+    "année": 2020,
+    "indicateur": "PIB par habitant",
+    "valeur": 43200
+  },
+  {
+    "année": 2021,
+    "indicateur": "PIB par habitant",
+    "valeur": 45100
+  },
+  {
+    "année": 2022,
+    "indicateur": "PIB par habitant",
+    "valeur": 46800
+  },
+  {
+    "année": 2020,
+    "indicateur": "Taux de croissance",
+    "valeur": -5.4
+  },
+  {
+    "année": 2021,
+    "indicateur": "Taux de croissance",
+    "valeur": 4.8
+  },
+  {
+    "année": 2022,
+    "indicateur": "Taux de croissance",
+    "valeur": 3.2
+  }
+]

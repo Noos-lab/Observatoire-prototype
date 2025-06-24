@@ -1,0 +1,32 @@
+[
+  {
+    "année": 2020,
+    "indicateur": "Espérance de vie",
+    "valeur": 72.6
+  },
+  {
+    "année": 2021,
+    "indicateur": "Espérance de vie",
+    "valeur": 72.3
+  },
+  {
+    "année": 2022,
+    "indicateur": "Espérance de vie",
+    "valeur": 72.8
+  },
+  {
+    "année": 2020,
+    "indicateur": "Taux de mortalité infantile",
+    "valeur": 29.4
+  },
+  {
+    "année": 2021,
+    "indicateur": "Taux de mortalité infantile",
+    "valeur": 28.7
+  },
+  {
+    "année": 2022,
+    "indicateur": "Taux de mortalité infantile",
+    "valeur": 27.9
+  }
+]
