@@ -3,10 +3,50 @@ import pandas as pd
 import plotly.express as px
 import os
 import json
+import requests
 
 # ---- Configuration ----
 st.set_page_config(page_title="Observatoire Global", layout="wide")
 st.title("🌐 Observatoire Global des Données Publiques")
+
+# ---- API Statistique Canada ----
+@st.cache_data(show_spinner=False)
+def get_all_statcan_cubes():
+    url = "https://www150.statcan.gc.ca/t1/wds/rest/getAllCubesList"
+    response = requests.get(url)
+    return response.json().get("object", [])
+
+@st.cache_data(show_spinner=False)
+def get_cube_metadata(product_id):
+    url = f"https://www150.statcan.gc.ca/t1/wds/rest/getCubeMetadata/{product_id}"
+    response = requests.get(url)
+    return response.json().get("object", {})
+
+@st.cache_data(show_spinner=False)
+def get_vector_data(vector_id):
+    url = f"https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVector/{vector_id}"
+    response = requests.get(url)
+    return pd.DataFrame(response.json().get("object", []))
+
+# ---- Recherche interactive dans Statistique Canada ----
+with st.sidebar:
+    st.header("🔍 Recherche Statistique Canada")
+    search_term = st.text_input("Mot-clé (ex: GDP, employment, Québec)", "Québec")
+    if search_term:
+        cubes = get_all_statcan_cubes()
+        filtered = [cube for cube in cubes if search_term.lower() in cube['cubeTitleEn'].lower()]
+        selected_cube = st.selectbox("Résultats disponibles", [f"{c['productId']} – {c['cubeTitleEn']}" for c in filtered])
+
+        if selected_cube:
+            product_id = selected_cube.split(" – ")[0]
+            metadata = get_cube_metadata(product_id)
+            vector_ids = metadata.get("vectorIds", [])[:3]  # 3 vecteurs max pour début
+
+            for vector_id in vector_ids:
+                df = get_vector_data(vector_id)
+                if not df.empty:
+                    st.markdown(f"### 📊 Données du vecteur {vector_id}")
+                    st.dataframe(df.head())
 
 # ---- Chargement des données simulées ----
 def load_data(source, country):
@@ -48,5 +88,5 @@ else:
 # ---- Note pied de page ----
 st.markdown("""
 ---
-Prototype Streamlit – Données simulées | Version 0.1
+Prototype Streamlit – Données simulées + API StatCan | Version 0.2
 """)
