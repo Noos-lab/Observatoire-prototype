@@ -96,6 +96,24 @@ if not data.empty:
 else:
     st.warning("Aucune donnée disponible pour cette combinaison pays/source.")
 
+    st.markdown("## 🧪 Test manuel avec un vecteur connu (Québec – Taux de chômage)")
+vector_test_id = "v123985190"
+
+try:
+    df_test = get_vector_data(vector_test_id)
+    if not df_test.empty:
+        df_test_filtered = df_test[["REF_DATE", "GEO", "VALUE"]].rename(columns={
+            "REF_DATE": "Année",
+            "GEO": "Région",
+            "VALUE": "Taux de chômage (%)"
+        })
+        st.dataframe(df_test_filtered.head(10))
+    else:
+        st.error("Aucune donnée retournée pour ce vecteur.")
+except Exception as e:
+    st.error(f"Erreur lors du test du vecteur : {e}")
+
+
 # ---- Note pied de page ----
 st.markdown("""
 ---
