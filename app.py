@@ -13,8 +13,19 @@ st.title("🌐 Observatoire Global des Données Publiques")
 @st.cache_data(show_spinner=False)
 def get_all_statcan_cubes():
     url = "https://www150.statcan.gc.ca/t1/wds/rest/getAllCubesList"
-    response = requests.get(url)
-    return response.json().get("object", [])
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        result = response.json()
+        if "object" in result:
+            return result["object"]
+        else:
+            st.error("Réponse inattendue de Statistique Canada.")
+            return []
+    except Exception as e:
+        st.error(f"Erreur lors de la connexion à Statistique Canada : {e}")
+        return []
+
 
 @st.cache_data(show_spinner=False)
 def get_cube_metadata(product_id):
