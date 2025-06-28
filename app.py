@@ -58,12 +58,12 @@ def load_data(source, country):
 st.title("🌐 Observatoire Global des Données")
 st.markdown("Bienvenue sur l'Observatoire Global. Choisissez un type de recherche pour commencer :")
 
-main_choices = ["Données publiques", "Études", "Blockchains"]
+main_choices = ["— Choisissez un domaine —", "Données publiques", "Études", "Blockchains"]
 main_choice = st.radio("Sélectionnez un domaine :", main_choices, horizontal=True)
 
 st.markdown("---")
 
-# ---- Navigation selon le choix principal ----
+# ---- Affichage conditionnel : n'affiche que si un domaine est choisi ----
 if main_choice == "Données publiques":
     # Options spécifiques pour Données publiques
     pays_options = [
@@ -148,35 +148,36 @@ elif main_choice == "Blockchains":
     st.info("Module d'exploration blockchain à implémenter ici…")
 
 # ---- Test dynamique StatCan (optionnel, peut être déplacé) ----
-with st.expander("🧪 Test dynamique Statistique Canada (debug/dev)"):
-    try:
-        cubes = get_all_statcan_cubes()
-        if not cubes:
-            st.error("Aucune donnée de cubes reçue de Statistique Canada.")
-        else:
-            filtered = [c for c in cubes if "gdp" in c["cubeTitleEn"].lower()]
-            if not filtered:
-                st.warning("Aucun cube trouvé correspondant à 'GDP'.")
+if main_choice == "Données publiques":
+    with st.expander("🧪 Test dynamique Statistique Canada (debug/dev)"):
+        try:
+            cubes = get_all_statcan_cubes()
+            if not cubes:
+                st.error("Aucune donnée de cubes reçue de Statistique Canada.")
             else:
-                cube_id = filtered[0]["productId"]
-                st.info(f"Cube trouvé : {cube_id} - {filtered[0]['cubeTitleEn']}")
-                metadata = get_cube_metadata(cube_id)
-                if metadata:
-                    vector_ids = metadata.get("vectorIds", [])[:3]
-                    if vector_ids:
-                        for vector_id in vector_ids:
-                            df = get_vector_data(vector_id)
-                            if not df.empty:
-                                st.markdown(f"### Données du vecteur {vector_id}")
-                                st.dataframe(df.head())
-                            else:
-                                st.info(f"Vecteur {vector_id} vide.")
-                    else:
-                        st.warning("Ce cube ne contient aucun vecteur.")
+                filtered = [c for c in cubes if "gdp" in c["cubeTitleEn"].lower()]
+                if not filtered:
+                    st.warning("Aucun cube trouvé correspondant à 'GDP'.")
                 else:
-                    st.warning("Impossible de récupérer le metadata pour ce cube.")
-    except Exception as e:
-        st.error(f"Erreur lors de la récupération dynamique : {e}")
+                    cube_id = filtered[0]["productId"]
+                    st.info(f"Cube trouvé : {cube_id} - {filtered[0]['cubeTitleEn']}")
+                    metadata = get_cube_metadata(cube_id)
+                    if metadata:
+                        vector_ids = metadata.get("vectorIds", [])[:3]
+                        if vector_ids:
+                            for vector_id in vector_ids:
+                                df = get_vector_data(vector_id)
+                                if not df.empty:
+                                    st.markdown(f"### Données du vecteur {vector_id}")
+                                    st.dataframe(df.head())
+                                else:
+                                    st.info(f"Vecteur {vector_id} vide.")
+                        else:
+                            st.warning("Ce cube ne contient aucun vecteur.")
+                    else:
+                        st.warning("Impossible de récupérer le metadata pour ce cube.")
+        except Exception as e:
+            st.error(f"Erreur lors de la récupération dynamique : {e}")
 
 # ---- Pied de page ----
 st.markdown("""
