@@ -85,49 +85,51 @@ if not data.empty:
 else:
     st.warning("Aucune donnée disponible pour cette combinaison pays/source.")
 
-# 🧪 Test complet : PIB du Québec
-st.markdown("## 🧪 Test complet : PIB du Québec")
+# ---- TEST dynamique StatCan ----
 
-# Chercher un cube existant
-cubes = get_all_statcan_cubes()
+st.markdown("## 🧪 Test dynamique Statistique Canada")
 
-# Exemple : chercher un cube contenant "GDP"
-filtered = [c for c in cubes if "gdp" in c["cubeTitleEn"].lower()]
+try:
+    # 1. Récupérer tous les cubes
+    cubes = get_all_statcan_cubes()
 
-if filtered:
-    cube_id = filtered[0]["productId"]
-    metadata = get_cube_metadata(cube_id)
-    vector_ids = metadata.get("vectorIds", [])[:3]
+    if not cubes:
+        st.error("Aucune donnée de cubes reçue de Statistique Canada.")
+    else:
+        # Chercher les cubes contenant 'gdp'
+        filtered = [
+            c for c in cubes
+            if "gdp" in c["cubeTitleEn"].lower()
+        ]
 
-    for vector_id in vector_ids:
-        df = get_vector_data(vector_id)
-        if not df.empty:
-            st.dataframe(df.head())
+        if not filtered:
+            st.warning("Aucun cube trouvé correspondant à 'GDP'.")
         else:
-            st.info(f"Vecteur {vector_id} vide.")
-else:
-    st.warning("Aucun cube trouvé correspondant à GDP.")
+            # Prendre le premier cube trouvé
+            cube_id = filtered[0]["productId"]
+            st.info(f"Cube trouvé : {cube_id} - {filtered[0]['cubeTitleEn']}")
 
-vector_ids = metadata.get("vectorIds", [])[:3]
+            # Récupérer ses métadonnées
+            metadata = get_cube_metadata(cube_id)
 
-if vector_ids:
-    for vector_id in vector_ids:
-        df = get_vector_data(vector_id)
-        if not df.empty:
-            if "GEO" in df.columns:
-                df_qc = df[df["GEO"] == "Quebec"]
-                if not df_qc.empty:
-                    st.markdown(f"### Données du vecteur {vector_id} (Québec seulement)")
-                    st.dataframe(df_qc.head())
+            if metadata:
+                vector_ids = metadata.get("vectorIds", [])[:3]
+
+                if vector_ids:
+                    for vector_id in vector_ids:
+                        df = get_vector_data(vector_id)
+                        if not df.empty:
+                            st.markdown(f"### Données du vecteur {vector_id}")
+                            st.dataframe(df.head())
+                        else:
+                            st.info(f"Vecteur {vector_id} vide.")
                 else:
-                    st.info(f"Aucune ligne 'Quebec' trouvée dans le vecteur {vector_id}.")
+                    st.warning("Ce cube ne contient aucun vecteur.")
             else:
-                st.markdown(f"### Données du vecteur {vector_id}")
-                st.dataframe(df.head())
-        else:
-            st.warning(f"Vecteur {vector_id} vide.")
-else:
-    st.warning("Aucun vecteur trouvé pour ce cube.")
+                st.warning("Impossible de récupérer le metadata pour ce cube.")
+except Exception as e:
+    st.error(f"Erreur lors de la récupération dynamique : {e}")
+
 
 # ---- Note pied de page ----
 st.markdown("""
