@@ -88,8 +88,26 @@ else:
 # 🧪 Test complet : PIB du Québec
 st.markdown("## 🧪 Test complet : PIB du Québec")
 
-cube_id = "36100446"
-metadata = get_cube_metadata(cube_id)
+# Chercher un cube existant
+cubes = get_all_statcan_cubes()
+
+# Exemple : chercher un cube contenant "GDP"
+filtered = [c for c in cubes if "gdp" in c["cubeTitleEn"].lower()]
+
+if filtered:
+    cube_id = filtered[0]["productId"]
+    metadata = get_cube_metadata(cube_id)
+    vector_ids = metadata.get("vectorIds", [])[:3]
+
+    for vector_id in vector_ids:
+        df = get_vector_data(vector_id)
+        if not df.empty:
+            st.dataframe(df.head())
+        else:
+            st.info(f"Vecteur {vector_id} vide.")
+else:
+    st.warning("Aucun cube trouvé correspondant à GDP.")
+
 vector_ids = metadata.get("vectorIds", [])[:3]
 
 if vector_ids:
