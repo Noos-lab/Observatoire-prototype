@@ -174,7 +174,7 @@ def get_commodities_prices(fmp_api_key=None):
         ]
 
 ##############################
-# Recherche PubMed paginée
+# Recherche PubMed paginée et alertes études
 ##############################
 
 def search_pubmed(term="medecine", retmax=10, retstart=0):
@@ -227,7 +227,6 @@ def fetch_pubmed_details(idlist):
 ##############################
 
 def load_data(source, country):
-    # Fichier fictif, à adapter si tu veux du vrai
     filepath = f"data/{source}/{country}.json"
     if os.path.exists(filepath):
         with open(filepath, "r", encoding="utf-8") as f:
@@ -235,7 +234,7 @@ def load_data(source, country):
     return pd.DataFrame()
 
 ##############################
-# Tableau de bord personnalisé
+# Tableau de bord personnalisé et alertes
 ##############################
 
 def init_portfolio():
@@ -256,6 +255,22 @@ def get_portfolio_items():
     init_portfolio()
     return list(st.session_state["portfolio"].values())
 
+def init_study_alerts():
+    if "study_alerts" not in st.session_state:
+        st.session_state["study_alerts"] = []
+
+def add_study_alert(term, mode, email=None):
+    init_study_alerts()
+    st.session_state["study_alerts"].append({
+        "term": term,
+        "mode": mode,
+        "email": email
+    })
+
+def get_study_alerts():
+    init_study_alerts()
+    return st.session_state["study_alerts"]
+
 ##############################
 # Interface utilisateur
 ##############################
@@ -269,7 +284,7 @@ main_choice = st.radio("Sélectionnez un domaine :", main_choices, horizontal=Tr
 st.markdown("---")
 
 ##############################
-# 1. Tableau de bord personnalisé
+# 1. Tableau de bord personnalisé et alertes études
 ##############################
 if main_choice == "Tableau de bord":
     st.header("📊 Votre tableau de bord personnalisé")
@@ -292,6 +307,23 @@ if main_choice == "Tableau de bord":
                     remove_from_portfolio(item['type'], item['id'])
                     st.experimental_rerun()
         st.caption("Ce tableau de bord est temporaire (lié à votre session).")
+    # Liste des alertes études
+    st.markdown("## 🔔 Alertes études (PubMed)")
+    study_alerts = get_study_alerts()
+    if not study_alerts:
+        st.info("Aucune alerte sur des études n'est active. Utilisez l'onglet 'Études' pour en ajouter.")
+    else:
+        for idx, alert in enumerate(study_alerts):
+            st.markdown(f"**Terme surveillé :** `{alert['term']}` &nbsp; | &nbsp; **Alerte par** : {alert['mode']}" + (f" ({alert['email']})" if alert['mode']=='Email' else ""))
+            # Simuler la détection d'une nouvelle étude (démo)
+            with st.expander(f"Voir derniers résultats pour '{alert['term']}'"):
+                ids, total = search_pubmed(term=alert['term'], retmax=3, retstart=0)
+                if ids:
+                    df_pubmed = fetch_pubmed_details(ids)
+                    for idx2, row in df_pubmed.iterrows():
+                        st.markdown(f"- {row['Titre']}  \n_Auteurs:_ {row['Auteurs']}", unsafe_allow_html=True)
+                else:
+                    st.info("Aucune étude trouvée pour ce terme.")
 
 ##############################
 # 2. Données publiques
@@ -365,7 +397,7 @@ elif main_choice == "Données publiques":
         st.info("Aucune donnée pour la seconde sélection.")
 
 ##############################
-# 3. Études (PubMed)
+# 3. Études (PubMed) avec création d'alerte
 ##############################
 elif main_choice == "Études":
     st.header("🔬 Recherches et études scientifiques")
@@ -380,6 +412,19 @@ elif main_choice == "Études":
         if 'pubmed_page' not in st.session_state:
             st.session_state.pubmed_page = 1
         per_page = 10
+
+        # Bloc de création d'alerte
+        st.markdown("##### 🔔 Créer une alerte pour ce terme PubMed")
+        with st.form("create_study_alert"):
+            alert_mode = st.selectbox("Voulez-vous recevoir l'alerte par e-mail ou dans votre tableau de bord ?", ["Tableau de bord", "Email"])
+            alert_email = st.text_input("Email (si alerte par Email)", value="", disabled=(alert_mode != "Email"))
+            submit_alert = st.form_submit_button("Créer l'alerte")
+            if submit_alert:
+                if alert_mode == "Email" and not alert_email:
+                    st.warning("Veuillez saisir votre email pour recevoir l'alerte.")
+                else:
+                    add_study_alert(term=search_term, mode=alert_mode, email=alert_email if alert_mode == "Email" else None)
+                    st.success(f"Alerte créée pour le terme '{search_term}' ({alert_mode}{' : ' + alert_email if alert_email else ''}). Vous la retrouverez dans votre tableau de bord.")
 
         if st.button("Lancer la recherche sur PubMed") or search_term:
             if st.session_state.get("last_search_term", "") != search_term:
@@ -562,5 +607,5 @@ elif main_choice == "Blockchains":
 ##############################
 st.markdown("""
 ---
-Prototype Streamlit – Tableau de bord personnalisé marchés et modules publics | Version 1.4
+Prototype Streamlit – Tableau de bord personnalisé marchés et alertes études | Version 1.5
 """)
