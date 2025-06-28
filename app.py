@@ -174,11 +174,71 @@ def get_commodities_prices(fmp_api_key=None):
         ]
 
 ##############################
+# Recherche PubMed paginée
+##############################
+
+def search_pubmed(term="medecine", retmax=10, retstart=0):
+    url = (
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        f"?db=pubmed&term={term}&retmax={retmax}&retstart={retstart}&retmode=json"
+    )
+    r = requests.get(url)
+    r.raise_for_status()
+    result = r.json()["esearchresult"]
+    ids = result["idlist"]
+    count = int(result.get("count", len(ids)))
+    return ids, count
+
+def fetch_pubmed_details(idlist):
+    if not idlist:
+        return pd.DataFrame()
+    ids = ",".join(idlist)
+    url = (
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+        f"?db=pubmed&id={ids}&retmode=xml"
+    )
+    r = requests.get(url)
+    r.raise_for_status()
+    root = ET.fromstring(r.content)
+    articles = []
+    for art in root.findall(".//PubmedArticle"):
+        title = art.findtext(".//ArticleTitle", "")
+        pmid = art.findtext(".//PMID", "")
+        authors = []
+        for a in art.findall(".//Author"):
+            last = a.findtext("LastName")
+            first = a.findtext("ForeName")
+            if last and first:
+                authors.append(f"{first} {last}")
+            elif last:
+                authors.append(last)
+        authors_str = ", ".join(authors)
+        link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""
+        title_md = f"[{title}]({link})" if title and link else title
+        articles.append({
+            "Titre": title_md,
+            "Auteurs": authors_str,
+            "Lien PubMed": link
+        })
+    return pd.DataFrame(articles)
+
+##############################
+# Données publiques (données fictives)
+##############################
+
+def load_data(source, country):
+    # Fichier fictif, à adapter si tu veux du vrai
+    filepath = f"data/{source}/{country}.json"
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            return pd.read_json(f)
+    return pd.DataFrame()
+
+##############################
 # Tableau de bord personnalisé
 ##############################
 
 def init_portfolio():
-    # Initialiser le portfolio dans la session si besoin
     if "portfolio" not in st.session_state:
         st.session_state["portfolio"] = {}
 
@@ -217,7 +277,6 @@ if main_choice == "Tableau de bord":
     if not portfolio_items:
         st.info("Ajoutez des éléments de marché, cryptos, bonds ou commodities via l'onglet 'Marchés' ou 'Blockchains' pour composer votre tableau de bord ici !")
     else:
-        df = pd.DataFrame(portfolio_items)
         for idx, item in enumerate(portfolio_items):
             cols = st.columns([3, 2, 2, 1, 1])
             with cols[0]:
@@ -235,7 +294,131 @@ if main_choice == "Tableau de bord":
         st.caption("Ce tableau de bord est temporaire (lié à votre session).")
 
 ##############################
-# 2. Marchés (ajout au tableau de bord)
+# 2. Données publiques
+##############################
+elif main_choice == "Données publiques":
+    st.header("📂 Données publiques")
+    pays_options = [
+        "Canada", "Québec", "France", "États-Unis", "Chine", "Inde",
+        "ONU", "OMS", "UNESCO"
+    ]
+    source_options = ["Banque mondiale", "OMS", "UNESCO"]
+
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_country = st.selectbox("🌍 Choisissez un pays ou une organisation", pays_options, key="country1")
+    with col2:
+        selected_source = st.selectbox("📚 Source de données", source_options, key="source1")
+
+    st.markdown("#### 🔄 Comparer avec un autre pays/organisation (optionnel)")
+    compare = st.checkbox("Activer la comparaison")
+    if compare:
+        col3, col4 = st.columns(2)
+        with col3:
+            country2 = st.selectbox("Deuxième pays/organisation", pays_options, index=1, key="country2")
+        with col4:
+            source2 = st.selectbox("Source pour le deuxième", source_options, key="source2")
+    else:
+        country2, source2 = None, None
+
+    data1 = load_data(selected_source, selected_country)
+    data2 = load_data(source2, country2) if compare and country2 and source2 else pd.DataFrame()
+
+    if not data1.empty:
+        st.subheader(f"Données pour {selected_country} – Source : {selected_source}")
+        available_years = data1['année'].dropna().unique()
+        selected_year = st.slider("📅 Filtrer par année", int(min(available_years)), int(max(available_years)), int(max(available_years)), key="year1")
+        filtered_data1 = data1[data1['année'] == selected_year]
+        st.dataframe(filtered_data1)
+        chart_type = st.selectbox("Type de visualisation", ["Barres", "Lignes", "Données textuelles"], key="chart1")
+        if chart_type == "Barres":
+            import plotly.express as px
+            fig = px.bar(filtered_data1, x="indicateur", y="valeur", color="indicateur", title=f"Indicateurs en {selected_year}")
+            st.plotly_chart(fig, use_container_width=True)
+        elif chart_type == "Lignes":
+            import plotly.express as px
+            fig = px.line(filtered_data1, x="indicateur", y="valeur", color="indicateur", title=f"Indicateurs en {selected_year}")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.write(filtered_data1)
+    else:
+        st.warning("Aucune donnée disponible pour cette combinaison pays/source.")
+
+    if compare and not data2.empty:
+        st.subheader(f"Comparaison avec {country2} – Source : {source2}")
+        available_years2 = data2['année'].dropna().unique()
+        selected_year2 = st.slider("📅 Année de comparaison", int(min(available_years2)), int(max(available_years2)), int(max(available_years2)), key="year2")
+        filtered_data2 = data2[data2['année'] == selected_year2]
+        st.dataframe(filtered_data2)
+        chart_type2 = st.selectbox("Type de visualisation (comparaison)", ["Barres", "Lignes", "Données textuelles"], key="chart2")
+        if chart_type2 == "Barres":
+            import plotly.express as px
+            fig2 = px.bar(filtered_data2, x="indicateur", y="valeur", color="indicateur", title=f"Indicateurs en {selected_year2}")
+            st.plotly_chart(fig2, use_container_width=True)
+        elif chart_type2 == "Lignes":
+            import plotly.express as px
+            fig2 = px.line(filtered_data2, x="indicateur", y="valeur", color="indicateur", title=f"Indicateurs en {selected_year2}")
+            st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.write(filtered_data2)
+    elif compare:
+        st.info("Aucune donnée pour la seconde sélection.")
+
+##############################
+# 3. Études (PubMed)
+##############################
+elif main_choice == "Études":
+    st.header("🔬 Recherches et études scientifiques")
+    domaines = ["Médecine", "Environnement", "Sciences sociales", "Économie", "Technologie"]
+    selected_field = st.selectbox("Domaine de recherche", domaines)
+
+    st.write(f"🔬 Vous avez choisi le domaine : {selected_field}")
+
+    if selected_field == "Médecine":
+        st.markdown("#### Recherche d'études PubMed en médecine")
+        search_term = st.text_input("🔎 Entrez un terme de recherche médical (ex : cancer, diabète, vaccination)", value="médecine")
+        if 'pubmed_page' not in st.session_state:
+            st.session_state.pubmed_page = 1
+        per_page = 10
+
+        if st.button("Lancer la recherche sur PubMed") or search_term:
+            if st.session_state.get("last_search_term", "") != search_term:
+                st.session_state.pubmed_page = 1
+                st.session_state.last_search_term = search_term
+
+            with st.spinner("Recherche sur PubMed..."):
+                page = st.session_state.pubmed_page
+                retstart = (page - 1) * per_page
+                ids, total = search_pubmed(term=search_term, retmax=per_page, retstart=retstart)
+                if ids:
+                    df_pubmed = fetch_pubmed_details(ids)
+                    if not df_pubmed.empty:
+                        start_idx = retstart+1
+                        end_idx = min(retstart+per_page, total)
+                        st.markdown(f"*Résultats {start_idx} à {end_idx} sur {total}*")
+                        for idx, row in df_pubmed.iterrows():
+                            st.markdown(f"**{start_idx+idx}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
+                        col_prev, col_next = st.columns([1, 1])
+                        with col_prev:
+                            if page > 1:
+                                if st.button("⬅️ Page précédente", key="prev_pubmed"):
+                                    st.session_state.pubmed_page -= 1
+                                    st.experimental_rerun()
+                        with col_next:
+                            if retstart + per_page < total:
+                                if st.button("Page suivante ➡️", key="next_pubmed"):
+                                    st.session_state.pubmed_page += 1
+                                    st.experimental_rerun()
+                    else:
+                        st.info("Aucun résultat trouvé (PubMed).")
+                else:
+                    st.info("Aucun résultat trouvé (PubMed).")
+        st.caption("Résultats issus de la base PubMed (10 par page, navigation possible).")
+    else:
+        st.info("Module d'exploration d'études à implémenter ici…")
+
+##############################
+# 4. Marchés (ajout au tableau de bord)
 ##############################
 elif main_choice == "Marchés":
     st.subheader("🌍 Marchés financiers et cryptos")
@@ -354,7 +537,7 @@ elif main_choice == "Marchés":
             st.success(f"{selected_com} ajoutée au tableau de bord !")
 
 ##############################
-# 3. Blockchains (inchangé, possibilité d'ajouter plus tard)
+# 5. Blockchains (inchangé)
 ##############################
 elif main_choice == "Blockchains":
     blockchains = ["Bitcoin", "Ethereum", "Tezos", "Solana", "Cardano", "Arbitrum", "Tron"]
@@ -375,18 +558,9 @@ elif main_choice == "Blockchains":
             st.success(f"Alerte '{alert_type}' pour {selected_blockchain} enregistrée pour {email_alert} (simulation).")
 
 ##############################
-# 4. Études et Données publiques (inchangé)
-##############################
-elif main_choice == "Études":
-    st.info("Module d'études (PubMed, etc.) à retrouver dans les versions précédentes.")
-
-elif main_choice == "Données publiques":
-    st.info("Module de données publiques à retrouver dans les versions précédentes.")
-
-##############################
 # Pied de page
 ##############################
 st.markdown("""
 ---
-Prototype Streamlit – Tableau de bord personnalisé marchés | Version 1.3
+Prototype Streamlit – Tableau de bord personnalisé marchés et modules publics | Version 1.4
 """)
