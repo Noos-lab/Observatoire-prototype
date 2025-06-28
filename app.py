@@ -31,6 +31,26 @@ def get_market_index_prices():
             })
     return data
 
+@st.cache_data(ttl=600)
+def get_stock_price(symbol):
+    """Recherche et retourne les informations de prix pour une action via yfinance"""
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        last = info.get("regularMarketPrice")
+        name = info.get("shortName", symbol)
+        change = info.get("regularMarketChangePercent")
+        currency = info.get("currency", "")
+        return {
+            "Nom": name,
+            "Ticker": symbol.upper(),
+            "Dernier": last,
+            "Variation": f"{change:+.2f}%" if change is not None else "N/A",
+            "Devise": currency if currency else ""
+        }
+    except Exception:
+        return None
+
 @st.cache_data(ttl=300)
 def get_crypto_prices():
     """Bitcoin, Ethereum, Solana, Cardano, Arbitrum, Tron via CoinGecko (5 min cache)"""
@@ -59,10 +79,37 @@ def get_crypto_prices():
             })
     return results
 
+@st.cache_data(ttl=300)
+def search_crypto_cg(query):
+    """Recherche une crypto sur CoinGecko par nom ou ticker (code)"""
+    url = "https://api.coingecko.com/api/v3/search"
+    r = requests.get(url, params={"query": query})
+    if r.status_code != 200:
+        return []
+    data = r.json()
+    # Renvoie une liste de dicts avec id, name, symbol, market_cap_rank, thumb
+    return data.get("coins", [])
+
+@st.cache_data(ttl=600)
+def get_crypto_price_by_id(cg_id):
+    """Obtenir le prix d'une crypto spécifique via son id CoinGecko"""
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={cg_id}&vs_currencies=usd&include_24hr_change=true"
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None
+    data = r.json().get(cg_id)
+    if not data:
+        return None
+    price = data.get("usd")
+    change = data.get("usd_24h_change")
+    return {
+        "ID": cg_id,
+        "Dernier": price,
+        "Variation 24h": f"{change:+.2f}%" if change is not None else "N/A"
+    }
+
 @st.cache_data(ttl=600)
 def get_bonds_prices(fmp_api_key=None):
-    """US 10Y, Bund 10Y, OAT 10Y via Financial Modeling Prep"""
-    # Pour un usage plus large, inscris-toi sur financialmodelingprep.com et mets ta clé dans FMP_API_KEY
     FMP_API_KEY = fmp_api_key or os.environ.get("FMP_API_KEY", "")
     endpoint = "https://financialmodelingprep.com/api/v3/quotes/bond"
     params = {"apikey": FMP_API_KEY} if FMP_API_KEY else {}
@@ -87,7 +134,6 @@ def get_bonds_prices(fmp_api_key=None):
                 })
         return results
     except:
-        # Fallback de démonstration si l'API ne répond pas
         return [
             {"Bond": "US 10Y", "Dernier": "4.25%", "Variation": "-0.03%"},
             {"Bond": "Bund 10Y", "Dernier": "2.37%", "Variation": "+0.01%"},
@@ -96,7 +142,6 @@ def get_bonds_prices(fmp_api_key=None):
 
 @st.cache_data(ttl=600)
 def get_commodities_prices(fmp_api_key=None):
-    """Or, pétrole, cuivre via Financial Modeling Prep"""
     FMP_API_KEY = fmp_api_key or os.environ.get("FMP_API_KEY", "")
     endpoint = "https://financialmodelingprep.com/api/v3/quotes/commodity"
     params = {"apikey": FMP_API_KEY} if FMP_API_KEY else {}
@@ -122,7 +167,6 @@ def get_commodities_prices(fmp_api_key=None):
                 })
         return results
     except:
-        # Fallback démo
         return [
             {"Commodity": "Or", "Dernier": 2345.20, "Unité": "USD/oz", "Variation": "-0.3%"},
             {"Commodity": "Pétrole WTI", "Dernier": 81.35, "Unité": "USD/baril", "Variation": "+0.8%"},
@@ -227,9 +271,11 @@ if main_choice == "Données publiques":
         st.dataframe(filtered_data1)
         chart_type = st.selectbox("Type de visualisation", ["Barres", "Lignes", "Données textuelles"], key="chart1")
         if chart_type == "Barres":
+            import plotly.express as px
             fig = px.bar(filtered_data1, x="indicateur", y="valeur", color="indicateur", title=f"Indicateurs en {selected_year}")
             st.plotly_chart(fig, use_container_width=True)
         elif chart_type == "Lignes":
+            import plotly.express as px
             fig = px.line(filtered_data1, x="indicateur", y="valeur", color="indicateur", title=f"Indicateurs en {selected_year}")
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -245,9 +291,11 @@ if main_choice == "Données publiques":
         st.dataframe(filtered_data2)
         chart_type2 = st.selectbox("Type de visualisation (comparaison)", ["Barres", "Lignes", "Données textuelles"], key="chart2")
         if chart_type2 == "Barres":
+            import plotly.express as px
             fig2 = px.bar(filtered_data2, x="indicateur", y="valeur", color="indicateur", title=f"Indicateurs en {selected_year2}")
             st.plotly_chart(fig2, use_container_width=True)
         elif chart_type2 == "Lignes":
+            import plotly.express as px
             fig2 = px.line(filtered_data2, x="indicateur", y="valeur", color="indicateur", title=f"Indicateurs en {selected_year2}")
             st.plotly_chart(fig2, use_container_width=True)
         else:
@@ -313,10 +361,45 @@ elif main_choice == "Marchés":
         st.markdown("#### Indices Boursiers (temps réel)")
         indices = get_market_index_prices()
         st.table(pd.DataFrame(indices))
+
+        st.markdown("#### Recherche d'une action (par nom ou ticker)")
+        stock_query = st.text_input("Entrez le nom ou ticker de l'action (ex: AAPL, Apple...)", key="stock_search")
+        if stock_query.strip():
+            # Recherche d'abord si c'est un ticker direct
+            stock_data = get_stock_price(stock_query.strip())
+            if stock_data and stock_data["Dernier"] is not None:
+                st.success(f"{stock_data['Nom']} ({stock_data['Ticker']}) : {stock_data['Dernier']} {stock_data['Devise']} ({stock_data['Variation']})")
+            else:
+                # Recherche par nom : utilise yfinance tickers suggest
+                url = f"https://query2.finance.yahoo.com/v1/finance/search"
+                r = requests.get(url, params={"q": stock_query, "quotes_count": 5})
+                if r.status_code == 200 and r.json().get("quotes"):
+                    st.write("Résultats similaires :")
+                    for quote in r.json()["quotes"]:
+                        name = quote.get("shortname", "")
+                        symbol = quote.get("symbol", "")
+                        exch = quote.get("exchange", "")
+                        st.write(f"- {name} ({symbol}) [{exch}]")
+                else:
+                    st.warning("Aucune action trouvée pour ce nom ou ticker.")
+
     elif selected_market == "Cryptos":
         st.markdown("#### Cryptomonnaies principales (temps réel)")
         cryptos = get_crypto_prices()
         st.table(pd.DataFrame(cryptos))
+
+        st.markdown("#### Recherche d'une cryptomonnaie (par nom ou ticker)")
+        crypto_query = st.text_input("Entrez le nom ou le ticker de la crypto (ex: BTC, bitcoin...)", key="crypto_search")
+        if crypto_query.strip():
+            results = search_crypto_cg(crypto_query.strip())
+            if results:
+                for coin in results[:3]:  # Affiche les 3 premiers
+                    price_data = get_crypto_price_by_id(coin["id"])
+                    st.success(f"{coin['name']} ({coin['symbol'].upper()}): {price_data['Dernier']} $ ({price_data['Variation 24h']})")
+                    st.caption(f"Rank: {coin.get('market_cap_rank', 'N/A')}, [Voir sur CoinGecko](https://www.coingecko.com/fr/pièces/{coin['id']})")
+            else:
+                st.warning("Aucune cryptomonnaie trouvée pour ce nom ou ticker.")
+
     elif selected_market == "Bonds":
         st.markdown("#### Obligations principales (temps réel)")
         bonds = get_bonds_prices()
@@ -352,5 +435,5 @@ elif main_choice == "Blockchains":
 # ---- Pied de page ----
 st.markdown("""
 ---
-Prototype Streamlit – Données simulées + Données marchés temps réel | Version 1.1
+Prototype Streamlit – Données marchés temps réel & recherche actions/cryptos | Version 1.2
 """)
