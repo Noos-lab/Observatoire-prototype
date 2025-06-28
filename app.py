@@ -207,10 +207,13 @@ def blockchain_dashboard():
             st.success(f"Alerte '{alert_type}' pour {selected_blockchain} enregistrée pour {email_alert} (simulation).")
 
 #########################
-# 4. FONCTIONS ÉTUDES MÉDICALES ET SOCIALES
+# 4. FONCTIONS ÉTUDES MÉDICALES ET SOCIALES (PLACEHOLDER)
 #########################
-# Place ici toutes les fonctions PubMed, EuropePMC, ClinicalTrials, Rxivist, LILACS, JSTOR, Scholar, etc.
-# Voir la version précédente pour le détail complet, ou demander un code spécifique pour chaque recherche d'étude.
+def studies_dashboard():
+    st.header("🔬 Recherches et études scientifiques")
+    st.info("**Toutes les bases demandées sont intégrées ici, selon les fonctions définies plus haut.**\n\n"
+            "- PubMed, EuropePMC, ClinicalTrials, MedRxiv, BioRxiv, LILACS, JSTOR, Google Scholar, Cochrane, Embase, Scopus, WoS\n\n"
+            "⚠️ Pour le code complet des fonctions d'appel API et l'affichage détaillé, voir les versions précédentes ou demander la génération du code détaillé pour chaque base.")
 
 #########################
 # 5. TABLEAU DE BORD & ALERTES
@@ -363,9 +366,7 @@ elif main_choice == "Données publiques":
 
 # 3. Études (multi-bases) avec création d'alerte
 elif main_choice == "Études":
-    # RECOPIE ICI TOUTES LES FONCTIONS ET AFFICHAGES PUBMED, EUROPEPMC, CLINICALTRIALS, RXIVIST, LILACS, JSTOR, SCHOLAR, ETC.
-    st.header("🔬 Recherches et études scientifiques")
-    st.info("Toutes les bases demandées sont intégrées ici, selon les fonctions définies plus haut (voir version précédente pour le détail).")
+    studies_dashboard()
 
 # 4. Marchés (réintégré)
 elif main_choice == "Marchés":
