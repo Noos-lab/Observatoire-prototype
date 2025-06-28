@@ -4,6 +4,7 @@ import plotly.express as px
 import os
 import json
 import requests
+import xml.etree.ElementTree as ET
 
 # ---- Configuration ----
 st.set_page_config(page_title="Observatoire Global", layout="wide")
@@ -45,6 +46,51 @@ def get_vector_data(vector_id):
     except Exception as e:
         st.error(f"Erreur lors de la récupération des données : {e}")
         return pd.DataFrame()
+
+# ---- Recherche PubMed ----
+def search_pubmed(term="medecine", retmax=10):
+    """Recherche des PMIDs sur PubMed selon le terme"""
+    url = (
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        f"?db=pubmed&term={term}&retmax={retmax}&retmode=json"
+    )
+    r = requests.get(url)
+    r.raise_for_status()
+    ids = r.json()["esearchresult"]["idlist"]
+    return ids
+
+def fetch_pubmed_details(idlist):
+    """Récupère les détails pour une liste de PMIDs et retourne un DataFrame"""
+    if not idlist:
+        return pd.DataFrame()
+    ids = ",".join(idlist)
+    url = (
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+        f"?db=pubmed&id={ids}&retmode=xml"
+    )
+    r = requests.get(url)
+    r.raise_for_status()
+    root = ET.fromstring(r.content)
+    articles = []
+    for art in root.findall(".//PubmedArticle"):
+        title = art.findtext(".//ArticleTitle", "")
+        pmid = art.findtext(".//PMID", "")
+        authors = []
+        for a in art.findall(".//Author"):
+            last = a.findtext("LastName")
+            first = a.findtext("ForeName")
+            if last and first:
+                authors.append(f"{first} {last}")
+            elif last:
+                authors.append(last)
+        authors_str = ", ".join(authors)
+        link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""
+        articles.append({
+            "Titre": title,
+            "Auteurs": authors_str,
+            "Lien PubMed": link
+        })
+    return pd.DataFrame(articles)
 
 # ---- Chargement des données simulées ----
 def load_data(source, country):
@@ -133,18 +179,41 @@ if main_choice == "Données publiques":
         st.info("Aucune donnée pour la seconde sélection.")
 
 elif main_choice == "Études":
-    # Options pour Études
     domaines = ["Médecine", "Environnement", "Sciences sociales", "Économie", "Technologie"]
     selected_field = st.selectbox("Domaine de recherche", domaines)
-    st.write(f"🔬 (Démo) Vous avez choisi le domaine : {selected_field}")
-    # Ici tu pourras brancher ton système d'indexation PubMed ou autre
-    st.info("Module d'exploration d'études à implémenter ici…")
+
+    st.write(f"🔬 Vous avez choisi le domaine : {selected_field}")
+
+    if selected_field == "Médecine":
+        st.markdown("#### Recherche d'études PubMed en médecine")
+        search_term = st.text_input("🔎 Entrez un terme de recherche médical (ex : cancer, diabète, vaccination)", value="médecine")
+        if st.button("Lancer la recherche sur PubMed") or search_term:
+            try:
+                with st.spinner("Recherche sur PubMed..."):
+                    ids = search_pubmed(term=search_term, retmax=10)
+                    if ids:
+                        df_pubmed = fetch_pubmed_details(ids)
+                        if not df_pubmed.empty:
+                            # Affichage sous forme de tableau avec liens cliquables
+                            def make_link(row):
+                                return f"[Ouvrir]({row['Lien PubMed']})" if row["Lien PubMed"] else "—"
+                            df_pubmed["Lien"] = df_pubmed.apply(make_link, axis=1)
+                            st.dataframe(df_pubmed[["Titre", "Auteurs", "Lien"]], use_container_width=True)
+                        else:
+                            st.info("Aucun résultat trouvé (PubMed).")
+                    else:
+                        st.info("Aucun résultat trouvé (PubMed).")
+            except Exception as e:
+                st.error(f"Erreur lors de la recherche PubMed : {e}")
+        st.caption("Résultats issus de la base PubMed (10 premiers articles).")
+
+    else:
+        st.info("Module d'exploration d'études à implémenter ici…")
 
 elif main_choice == "Blockchains":
     blockchains = ["Bitcoin", "Ethereum", "Tezos", "Solana"]
     selected_blockchain = st.selectbox("Choisissez une blockchain", blockchains)
     st.write(f"⛓️ (Démo) Vous avez choisi : {selected_blockchain}")
-    # Ici tu pourras ajouter l'affichage d'indicateurs ou d'explorateur de blocs
     st.info("Module d'exploration blockchain à implémenter ici…")
 
 # ---- Test dynamique StatCan (optionnel, peut être déplacé) ----
@@ -182,5 +251,5 @@ if main_choice == "Données publiques":
 # ---- Pied de page ----
 st.markdown("""
 ---
-Prototype Streamlit – Données simulées + API StatCan | Version 0.5
+Prototype Streamlit – Données simulées + API StatCan + PubMed | Version 0.6
 """)
