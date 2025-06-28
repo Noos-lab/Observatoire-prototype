@@ -104,11 +104,48 @@ def load_data(source, country):
             return pd.read_json(f)
     return pd.DataFrame()
 
+# ---- Fonctions pour Marchés (APIs publiques ou stub/demo pour illustration) ----
+
+def get_market_index_prices():
+    """Retourne les prix indicatifs pour Dow Jones, Nasdaq, SP500 (données simulées/démo)"""
+    # Pour usage réel, utiliser une API financière comme Yahoo Finance, Alpha Vantage, etc.
+    # Ici, données fictives ou de démonstration
+    return [
+        {"Indice": "Dow Jones", "Ticker": "DJI", "Dernier": 39100.45, "Variation": "+0.31%"},
+        {"Indice": "Nasdaq", "Ticker": "IXIC", "Dernier": 18170.12, "Variation": "+0.48%"},
+        {"Indice": "S&P 500", "Ticker": "GSPC", "Dernier": 5530.77, "Variation": "+0.22%"},
+    ]
+
+def get_crypto_prices():
+    """Retourne les prix indicatifs pour quelques cryptos (données simulées/démo)"""
+    return [
+        {"Crypto": "Bitcoin", "Ticker": "BTC", "Dernier": 63450.25, "Variation": "+1.2%"},
+        {"Crypto": "Ethereum", "Ticker": "ETH", "Dernier": 3520.80, "Variation": "-0.4%"},
+        {"Crypto": "Solana", "Ticker": "SOL", "Dernier": 139.30, "Variation": "+2.6%"},
+        {"Crypto": "Cardano", "Ticker": "ADA", "Dernier": 0.385, "Variation": "+0.9%"},
+    ]
+
+def get_bonds_prices():
+    """Retourne les taux indicatifs de bonds (données simulées/démo)"""
+    return [
+        {"Bond": "US 10Y", "Dernier": "4.25%", "Variation": "-0.03%"},
+        {"Bond": "Bund 10Y", "Dernier": "2.37%", "Variation": "+0.01%"},
+        {"Bond": "OAT 10Y", "Dernier": "3.12%", "Variation": "+0.00%"},
+    ]
+
+def get_commodities_prices():
+    """Retourne les prix indicatifs de commodities (données simulées/démo)"""
+    return [
+        {"Commodity": "Or", "Ticker": "XAU", "Dernier": 2345.20, "Unité": "USD/oz", "Variation": "-0.3%"},
+        {"Commodity": "Pétrole WTI", "Ticker": "CL", "Dernier": 81.35, "Unité": "USD/baril", "Variation": "+0.8%"},
+        {"Commodity": "Cuivre", "Ticker": "HG", "Dernier": 4.38, "Unité": "USD/lb", "Variation": "+1.4%"},
+    ]
+
 # ---- Page d'accueil : choix principal ----
 st.title("🌐 Observatoire Global des Données")
 st.markdown("Bienvenue sur l'Observatoire Global. Choisissez un type de recherche pour commencer :")
 
-main_choices = ["— Choisissez un domaine —", "Données publiques", "Études", "Blockchains"]
+main_choices = ["— Choisissez un domaine —", "Données publiques", "Études", "Marchés", "Blockchains"]
 main_choice = st.radio("Sélectionnez un domaine :", main_choices, horizontal=True)
 
 st.markdown("---")
@@ -237,11 +274,50 @@ elif main_choice == "Études":
     else:
         st.info("Module d'exploration d'études à implémenter ici…")
 
+elif main_choice == "Marchés":
+    st.subheader("🌍 Marchés financiers et cryptos")
+    sous_options = ["Bourses", "Cryptos", "Bonds", "Commodities"]
+    selected_market = st.selectbox("Choisissez un segment de marché :", sous_options)
+
+    if selected_market == "Bourses":
+        st.markdown("#### Indices Boursiers")
+        indices = get_market_index_prices()
+        st.table(pd.DataFrame(indices))
+    elif selected_market == "Cryptos":
+        st.markdown("#### Cryptomonnaies principales")
+        cryptos = get_crypto_prices()
+        st.table(pd.DataFrame(cryptos))
+    elif selected_market == "Bonds":
+        st.markdown("#### Obligations principales")
+        bonds = get_bonds_prices()
+        st.table(pd.DataFrame(bonds))
+    elif selected_market == "Commodities":
+        st.markdown("#### Matières premières")
+        commos = get_commodities_prices()
+        st.table(pd.DataFrame(commos))
+    else:
+        st.info("Sélectionnez une sous-catégorie pour afficher les prix.")
+
 elif main_choice == "Blockchains":
-    blockchains = ["Bitcoin", "Ethereum", "Tezos", "Solana"]
+    blockchains = ["Bitcoin", "Ethereum", "Tezos", "Solana", "Cardano", "Arbitrum", "Tron"]
     selected_blockchain = st.selectbox("Choisissez une blockchain", blockchains)
+
     st.write(f"⛓️ (Démo) Vous avez choisi : {selected_blockchain}")
+
     st.info("Module d'exploration blockchain à implémenter ici…")
+
+    st.markdown("---")
+    st.markdown("### 🔔 Créer une alerte pour ce réseau Blockchain")
+    with st.form(f"alert_form_{selected_blockchain}"):
+        alert_type = st.selectbox(
+            "Type d'alerte",
+            ["Nouvelle transaction importante", "Variation de prix", "Hausse brutale de fees", "Bloc miné", "Autre"]
+        )
+        threshold = st.text_input("Seuil / Mot-clé / Adresse (optionnel)")
+        email_alert = st.text_input("Email pour recevoir l'alerte")
+        submit_alert = st.form_submit_button("Créer l'alerte")
+        if submit_alert:
+            st.success(f"Alerte '{alert_type}' pour {selected_blockchain} enregistrée pour {email_alert} (simulation).")
 
 # ---- Test dynamique StatCan (optionnel, peut être déplacé) ----
 if main_choice == "Données publiques":
@@ -278,5 +354,5 @@ if main_choice == "Données publiques":
 # ---- Pied de page ----
 st.markdown("""
 ---
-Prototype Streamlit – Données simulées + API StatCan + PubMed | Version 0.8 Pagination
+Prototype Streamlit – Données simulées + API StatCan + PubMed + Marchés | Version 1.0
 """)
