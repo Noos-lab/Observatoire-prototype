@@ -246,4 +246,12 @@ if main_choice == "Données publiques":
                         else:
                             st.warning("Ce cube ne contient aucun vecteur.")
                     else:
-                        st.warning
+                        st.warning("Impossible de récupérer le metadata pour ce cube.")
+        except Exception as e:
+            st.error(f"Erreur lors de la récupération dynamique : {e}")
+
+# ---- Pied de page ----
+st.markdown("""
+---
+Prototype Streamlit – Données simulées + API StatCan + PubMed | Version 0.7
+""")
