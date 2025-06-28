@@ -5,13 +5,11 @@ import yfinance as yf
 import xml.etree.ElementTree as ET
 import os
 
-st.set_page_config(page_title="Observatoire Global", layout="wide")
+st.set_page_config(page_title="Noos: information | connaissance | action", layout="wide")
 
 ##############################
 # Fonctions marché temps réel
 ##############################
-# (Identiques aux versions précédentes)
-
 @st.cache_data(ttl=600)
 def get_market_index_prices():
     tickers = {
@@ -219,7 +217,7 @@ def fetch_pubmed_details(idlist):
         articles.append({
             "Titre": title_md,
             "Auteurs": authors_str,
-            "Lien PubMed": link
+            "Source": "PubMed"
         })
     return pd.DataFrame(articles)
 
@@ -233,7 +231,7 @@ def search_europepmc(term, page=1, pageSize=10):
     }
     r = requests.get(url, params=params)
     if r.status_code != 200:
-        return [], 0
+        return pd.DataFrame(), 0
     data = r.json()
     hits = data.get("resultList", {}).get("result", [])
     total = int(data.get("hitCount", 0))
@@ -253,9 +251,9 @@ def search_europepmc(term, page=1, pageSize=10):
         articles.append({
             "Titre": title_md,
             "Auteurs": authors,
-            "Lien": link_url
+            "Source": "Europe PMC"
         })
-    return articles, total
+    return pd.DataFrame(articles), total
 
 def search_clinicaltrials(term, max_studies=10):
     url = "https://clinicaltrials.gov/api/query/study_fields"
@@ -268,7 +266,7 @@ def search_clinicaltrials(term, max_studies=10):
     }
     r = requests.get(url, params=params)
     if r.status_code != 200:
-        return []
+        return pd.DataFrame()
     studies = r.json()["StudyFieldsResponse"]["StudyFields"]
     results = []
     for study in studies:
@@ -281,43 +279,36 @@ def search_clinicaltrials(term, max_studies=10):
         title_md = f"[{title}]({url_link})" if title and url_link else title
         results.append({
             "Titre": title_md,
-            "Sponsor": sponsor,
-            "Pays": country,
-            "Date": date,
-            "NCT": nctid
+            "Auteurs": sponsor,
+            "Source": "ClinicalTrials.gov"
         })
-    return results
+    return pd.DataFrame(results)
 
-# ---------------------------
-# Liens et instructions pour autres bases de données médicales
-# ---------------------------
-
-external_med_db_links = {
-    "PubMed": "https://pubmed.ncbi.nlm.nih.gov/",
-    "Embase": "https://www.embase.com/",
-    "Cochrane Library": "https://www.cochranelibrary.com/",
-    "Web of Science (WoS)": "https://www.webofscience.com/",
-    "Scopus": "https://www.scopus.com/",
-    "ClinicalTrials.gov": "https://clinicaltrials.gov/",
-    "Europe PMC": "https://europepmc.org/",
-    "LILACS": "https://lilacs.bvsalud.org/fr/",
-    "MedRxiv": "https://www.medrxiv.org/",
-    "BioRxiv": "https://www.biorxiv.org/",
-    "Google Scholar": "https://scholar.google.com/",
-}
+def search_external_db_links(term, base):
+    # Returns a string representing a link to search for the term in the external base
+    links = {
+        "Embase": f"https://www.embase.com/search/results?query={term.replace(' ','+')}",
+        "Cochrane Library": f"https://www.cochranelibrary.com/search?text={term.replace(' ','+')}",
+        "Web of Science (WoS)": f"https://www.webofscience.com/wos/woscc/summary/{term.replace(' ','+')}",
+        "Scopus": f"https://www.scopus.com/results/results.uri?sort=plf-f&src=s&sid=&sot=b&sdt=b&sl=0&origin=searchbasic&editSaveSearch=&txGid=&searchterm1={term.replace(' ','+')}",
+        "LILACS": f"https://lilacs.bvsalud.org/fr/?q={term.replace(' ','+')}",
+        "MedRxiv": f"https://www.medrxiv.org/search/{term.replace(' ','+')}",
+        "BioRxiv": f"https://www.biorxiv.org/search/{term.replace(' ','+')}",
+        "Google Scholar": f"https://scholar.google.com/scholar?q={term.replace(' ','+')}",
+        "JSTOR": f"https://www.jstor.org/action/doBasicSearch?Query={term.replace(' ','+')}",
+    }
+    return links.get(base, "")
 
 external_med_db_desc = {
-    "PubMed": "Base mondiale d'articles biomédicaux (accès libre).",
     "Embase": "Grande base biomédicale, forte en pharmacologie et essais européens (accès payant/institutionnel).",
     "Cochrane Library": "Référence pour les revues systématiques en santé (partiellement libre).",
     "Web of Science (WoS)": "Base multidisciplinaire, suivi des citations (accès payant/institutionnel).",
     "Scopus": "Grande base de citations et résumés en sciences (accès institutionnel).",
-    "ClinicalTrials.gov": "Registre mondial des essais cliniques (accès libre).",
-    "Europe PMC": "Base ouverte, forte sur la recherche européenne.",
     "LILACS": "Littérature santé Amérique latine/Caraïbes (accès libre).",
     "MedRxiv": "Prépublications en médecine.",
     "BioRxiv": "Prépublications en biologie.",
     "Google Scholar": "Moteur multidisciplinaire, accès libre.",
+    "JSTOR": "Archives universitaires multidisciplinaires, fort en sciences sociales (accès institutionnel ou partiel).",
 }
 
 ##############################
@@ -373,8 +364,8 @@ def get_study_alerts():
 # Interface utilisateur
 ##############################
 
-st.title("🌐 Observatoire Global des Données")
-st.markdown("Bienvenue sur l'Observatoire Global. Sélectionnez un domaine ou créez votre tableau de bord personnalisé :")
+st.title("Noos: information | connaissance | action")
+st.markdown("Bienvenue sur Noos. Sélectionnez un domaine ou créez votre tableau de bord personnalisé :")
 
 main_choices = ["Tableau de bord", "Données publiques", "Études", "Marchés", "Blockchains"]
 main_choice = st.radio("Sélectionnez un domaine :", main_choices, horizontal=True)
@@ -414,6 +405,7 @@ if main_choice == "Tableau de bord":
         for idx, alert in enumerate(study_alerts):
             st.markdown(f"**Terme surveillé :** `{alert['term']}` &nbsp; | &nbsp; **Alerte par** : {alert['mode']}" + (f" ({alert['email']})" if alert['mode']=='Email' else ""))
             with st.expander(f"Voir derniers résultats pour '{alert['term']}'"):
+                # PubMed
                 st.markdown("**PubMed**")
                 ids, total = search_pubmed(term=alert['term'], retmax=2, retstart=0)
                 if ids:
@@ -422,26 +414,30 @@ if main_choice == "Tableau de bord":
                         st.markdown(f"- {row['Titre']}  \n_Auteurs:_ {row['Auteurs']}", unsafe_allow_html=True)
                 else:
                     st.info("Aucune étude trouvée dans PubMed.")
+                # EuropePMC
                 st.markdown("**EuropePMC**")
-                articles, total_epmc = search_europepmc(term=alert['term'], page=1, pageSize=2)
-                if articles:
-                    for art in articles:
-                        st.markdown(f"- {art['Titre']}  \n_Auteurs:_ {art['Auteurs']}", unsafe_allow_html=True)
+                df_epmc, _ = search_europepmc(term=alert['term'], page=1, pageSize=2)
+                if not df_epmc.empty:
+                    for idx2, row in df_epmc.iterrows():
+                        st.markdown(f"- {row['Titre']}  \n_Auteurs:_ {row['Auteurs']}", unsafe_allow_html=True)
                 else:
                     st.info("Aucune étude trouvée dans EuropePMC.")
+                # ClinicalTrials
                 st.markdown("**ClinicalTrials.gov**")
-                trials = search_clinicaltrials(term=alert['term'], max_studies=2)
-                if trials:
-                    for t in trials:
-                        st.markdown(f"- {t['Titre']}  \n_Sponsor:_ {t['Sponsor']} | _Pays:_ {t['Pays']} | _Date:_ {t['Date']}", unsafe_allow_html=True)
+                df_trials = search_clinicaltrials(term=alert['term'], max_studies=2)
+                if not df_trials.empty:
+                    for idx2, row in df_trials.iterrows():
+                        st.markdown(f"- {row['Titre']}  \n_Sponsor:_ {row['Auteurs']}", unsafe_allow_html=True)
                 else:
                     st.info("Aucun essai clinique trouvé.")
+                # Autres bases (liens dynamiques)
                 st.markdown("**Bases complémentaires**")
                 for base in ["Embase", "Cochrane Library", "Web of Science (WoS)", "Scopus", "LILACS", "MedRxiv", "BioRxiv", "Google Scholar"]:
-                    st.markdown(f"- [{base}]({external_med_db_links[base]}) : {external_med_db_desc[base]}")
+                    base_link = search_external_db_links(alert['term'], base)
+                    st.markdown(f"- [{base}]({base_link}) : {external_med_db_desc[base]}")
 
 ##############################
-# 2. Données publiques
+# 2. Données publiques (identique)
 ##############################
 elif main_choice == "Données publiques":
     st.header("📂 Données publiques")
@@ -547,82 +543,87 @@ elif main_choice == "Études":
         ])
 
         with tab1:
-            # Pagination PubMed
             if 'pubmed_page' not in st.session_state:
                 st.session_state.pubmed_page = 1
             ids, total = search_pubmed(term=search_term, retmax=per_page, retstart=(st.session_state.pubmed_page - 1) * per_page)
-            if ids:
-                df_pubmed = fetch_pubmed_details(ids)
-                start_idx = (st.session_state.pubmed_page-1)*per_page+1
-                end_idx = min(start_idx + per_page - 1, total)
-                st.markdown(f"*Résultats {start_idx} à {end_idx} sur {total}*")
+            df_pubmed = fetch_pubmed_details(ids) if ids else pd.DataFrame()
+            start_idx = (st.session_state.pubmed_page-1)*per_page+1
+            end_idx = min(start_idx + per_page - 1, total)
+            st.markdown(f"*Résultats {start_idx} à {end_idx} sur {total}*")
+            if not df_pubmed.empty:
                 for idx, row in df_pubmed.iterrows():
                     st.markdown(f"**{start_idx+idx}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
-                col_prev, col_next = st.columns([1, 1])
-                with col_prev:
-                    if st.session_state.pubmed_page > 1:
-                        if st.button("⬅️ Page précédente (PubMed)", key="prev_pubmed"):
-                            st.session_state.pubmed_page -= 1
-                            st.experimental_rerun()
-                with col_next:
-                    if end_idx < total:
-                        if st.button("Page suivante ➡️ (PubMed)", key="next_pubmed"):
-                            st.session_state.pubmed_page += 1
-                            st.experimental_rerun()
             else:
                 st.info("Aucun résultat trouvé dans PubMed.")
+            col_prev, col_next = st.columns([1, 1])
+            with col_prev:
+                if st.session_state.pubmed_page > 1:
+                    if st.button("⬅️ Page précédente (PubMed)", key="prev_pubmed"):
+                        st.session_state.pubmed_page -= 1
+                        st.experimental_rerun()
+            with col_next:
+                if end_idx < total:
+                    if st.button("Page suivante ➡️ (PubMed)", key="next_pubmed"):
+                        st.session_state.pubmed_page += 1
+                        st.experimental_rerun()
 
         with tab2:
-            # Pagination EuropePMC
             if 'epmc_page' not in st.session_state:
                 st.session_state.epmc_page = 1
-            articles, total_epmc = search_europepmc(term=search_term, page=st.session_state.epmc_page, pageSize=per_page)
+            df_epmc, total_epmc = search_europepmc(term=search_term, page=st.session_state.epmc_page, pageSize=per_page)
             start_idx = (st.session_state.epmc_page-1)*per_page+1
             end_idx = min(start_idx + per_page - 1, total_epmc)
             st.markdown(f"*Résultats {start_idx} à {end_idx} sur {total_epmc}*")
-            if articles:
-                for idx, art in enumerate(articles):
-                    st.markdown(f"**{start_idx+idx}. {art['Titre']}**  \n_Auteurs :_ {art['Auteurs']}", unsafe_allow_html=True)
-                col_prev, col_next = st.columns([1, 1])
-                with col_prev:
-                    if st.session_state.epmc_page > 1:
-                        if st.button("⬅️ Page précédente (EuropePMC)", key="prev_epmc"):
-                            st.session_state.epmc_page -= 1
-                            st.experimental_rerun()
-                with col_next:
-                    if end_idx < total_epmc:
-                        if st.button("Page suivante ➡️ (EuropePMC)", key="next_epmc"):
-                            st.session_state.epmc_page += 1
-                            st.experimental_rerun()
+            if not df_epmc.empty:
+                for idx, row in df_epmc.iterrows():
+                    st.markdown(f"**{start_idx+idx}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
             else:
                 st.info("Aucun résultat trouvé dans EuropePMC.")
+            col_prev, col_next = st.columns([1, 1])
+            with col_prev:
+                if st.session_state.epmc_page > 1:
+                    if st.button("⬅️ Page précédente (EuropePMC)", key="prev_epmc"):
+                        st.session_state.epmc_page -= 1
+                        st.experimental_rerun()
+            with col_next:
+                if end_idx < total_epmc:
+                    if st.button("Page suivante ➡️ (EuropePMC)", key="next_epmc"):
+                        st.session_state.epmc_page += 1
+                        st.experimental_rerun()
 
         with tab3:
-            # Pagination ClinicalTrials
             if 'ct_page' not in st.session_state:
                 st.session_state.ct_page = 1
             ct_start = (st.session_state.ct_page-1)*per_page+1
-            trials = search_clinicaltrials(term=search_term, max_studies=per_page)
-            if trials:
-                for idx, t in enumerate(trials):
-                    st.markdown(f"**{ct_start+idx}. {t['Titre']}**  \n_Sponsor:_ {t['Sponsor']} | _Pays:_ {t['Pays']} | _Date:_ {t['Date']}", unsafe_allow_html=True)
-                col_prev, col_next = st.columns([1, 1])
-                with col_prev:
-                    if st.session_state.ct_page > 1:
-                        if st.button("⬅️ Page précédente (ClinicalTrials)", key="prev_ct"):
-                            st.session_state.ct_page -= 1
-                            st.experimental_rerun()
-                with col_next:
-                    if st.button("Page suivante ➡️ (ClinicalTrials)", key="next_ct"):
-                        st.session_state.ct_page += 1
-                        st.experimental_rerun()
+            df_trials = search_clinicaltrials(term=search_term, max_studies=per_page)
+            if not df_trials.empty:
+                for idx, row in df_trials.iterrows():
+                    st.markdown(f"**{ct_start+idx}. {row['Titre']}**  \n_Sponsor:_ {row['Auteurs']}", unsafe_allow_html=True)
             else:
                 st.info("Aucun résultat trouvé dans ClinicalTrials.gov.")
+            col_prev, col_next = st.columns([1, 1])
+            with col_prev:
+                if st.session_state.ct_page > 1:
+                    if st.button("⬅️ Page précédente (ClinicalTrials)", key="prev_ct"):
+                        st.session_state.ct_page -= 1
+                        st.experimental_rerun()
+            with col_next:
+                if st.button("Page suivante ➡️ (ClinicalTrials)", key="next_ct"):
+                    st.session_state.ct_page += 1
+                    st.experimental_rerun()
 
         with tab4:
-            st.markdown("**Bases complémentaires :**")
+            st.markdown("**Recherchez ce terme dans d'autres bases :**")
             for base in ["Embase", "Cochrane Library", "Web of Science (WoS)", "Scopus", "LILACS", "MedRxiv", "BioRxiv", "Google Scholar"]:
-                st.markdown(f"- [{base}]({external_med_db_links[base]}) : {external_med_db_desc[base]}")
+                base_link = search_external_db_links(search_term, base)
+                st.markdown(f"- [{base}]({base_link}) : {external_med_db_desc[base]}")
+
+    elif selected_field == "Sciences sociales":
+        st.markdown("#### Recherche JSTOR (sciences sociales et sciences humaines)")
+        search_term = st.text_input("🔎 Entrez un terme pour JSTOR", value="sociology")
+        jstor_link = search_external_db_links(search_term, "JSTOR")
+        st.markdown(f"**[Voir les résultats sur JSTOR]({jstor_link})**")
+        st.info("Résultats JSTOR affichés sur leur site (accès institutionnel ou partiel requis).")
 
     else:
         st.info("Module d'exploration d'études à implémenter ici…")
@@ -772,5 +773,5 @@ elif main_choice == "Blockchains":
 ##############################
 st.markdown("""
 ---
-Prototype Streamlit – Tableau de bord, études multi-bases & alertes | Version 1.7
+Noos: information | connaissance | action
 """)
