@@ -47,17 +47,19 @@ def get_vector_data(vector_id):
         st.error(f"Erreur lors de la récupération des données : {e}")
         return pd.DataFrame()
 
-# ---- Recherche PubMed ----
-def search_pubmed(term="medecine", retmax=10):
-    """Recherche des PMIDs sur PubMed selon le terme"""
+# ---- Recherche PubMed paginée ----
+def search_pubmed(term="medecine", retmax=10, retstart=0):
+    """Recherche des PMIDs sur PubMed selon le terme, paginée"""
     url = (
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-        f"?db=pubmed&term={term}&retmax={retmax}&retmode=json"
+        f"?db=pubmed&term={term}&retmax={retmax}&retstart={retstart}&retmode=json"
     )
     r = requests.get(url)
     r.raise_for_status()
-    ids = r.json()["esearchresult"]["idlist"]
-    return ids
+    result = r.json()["esearchresult"]
+    ids = result["idlist"]
+    count = int(result.get("count", len(ids)))
+    return ids, count
 
 def fetch_pubmed_details(idlist):
     """Récupère les détails pour une liste de PMIDs et retourne un DataFrame"""
@@ -189,26 +191,49 @@ elif main_choice == "Études":
     if selected_field == "Médecine":
         st.markdown("#### Recherche d'études PubMed en médecine")
         search_term = st.text_input("🔎 Entrez un terme de recherche médical (ex : cancer, diabète, vaccination)", value="médecine")
+        # Pagination avec session state
+        if 'pubmed_page' not in st.session_state:
+            st.session_state.pubmed_page = 1
+        per_page = 10
+
+        # Lancement de la recherche
         if st.button("Lancer la recherche sur PubMed") or search_term:
-            try:
-                with st.spinner("Recherche sur PubMed..."):
-                    ids = search_pubmed(term=search_term, retmax=10)
-                    if ids:
-                        df_pubmed = fetch_pubmed_details(ids)
-                        if not df_pubmed.empty:
-                            # Affichage sous forme de tableau avec titres cliquables
-                            # Attention: st.dataframe n'affiche pas le markdown comme des liens,
-                            # il faut utiliser st.markdown ou st.write dans une boucle.
-                            for idx, row in df_pubmed.iterrows():
-                                st.markdown(f"**{idx+1}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
-                            st.caption("Clique sur un titre pour ouvrir l'étude dans PubMed.")
-                        else:
-                            st.info("Aucun résultat trouvé (PubMed).")
+            # Reset pagination sur nouvelle recherche
+            if st.session_state.get("last_search_term", "") != search_term:
+                st.session_state.pubmed_page = 1
+                st.session_state.last_search_term = search_term
+
+            with st.spinner("Recherche sur PubMed..."):
+                # Calcul de l'offset de départ
+                page = st.session_state.pubmed_page
+                retstart = (page - 1) * per_page
+                ids, total = search_pubmed(term=search_term, retmax=per_page, retstart=retstart)
+                if ids:
+                    df_pubmed = fetch_pubmed_details(ids)
+                    if not df_pubmed.empty:
+                        # Affichage sous forme de liste de titres cliquables + auteurs
+                        start_idx = retstart+1
+                        end_idx = min(retstart+per_page, total)
+                        st.markdown(f"*Résultats {start_idx} à {end_idx} sur {total}*")
+                        for idx, row in df_pubmed.iterrows():
+                            st.markdown(f"**{start_idx+idx}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
+                        # Pagination
+                        col_prev, col_next = st.columns([1, 1])
+                        with col_prev:
+                            if page > 1:
+                                if st.button("⬅️ Page précédente", key="prev_pubmed"):
+                                    st.session_state.pubmed_page -= 1
+                                    st.experimental_rerun()
+                        with col_next:
+                            if retstart + per_page < total:
+                                if st.button("Page suivante ➡️", key="next_pubmed"):
+                                    st.session_state.pubmed_page += 1
+                                    st.experimental_rerun()
                     else:
                         st.info("Aucun résultat trouvé (PubMed).")
-            except Exception as e:
-                st.error(f"Erreur lors de la recherche PubMed : {e}")
-        st.caption("Résultats issus de la base PubMed (10 premiers articles).")
+                else:
+                    st.info("Aucun résultat trouvé (PubMed).")
+        st.caption("Résultats issus de la base PubMed (10 par page, navigation possible).")
     else:
         st.info("Module d'exploration d'études à implémenter ici…")
 
@@ -253,5 +278,5 @@ if main_choice == "Données publiques":
 # ---- Pied de page ----
 st.markdown("""
 ---
-Prototype Streamlit – Données simulées + API StatCan + PubMed | Version 0.7
+Prototype Streamlit – Données simulées + API StatCan + PubMed | Version 0.8 Pagination
 """)
