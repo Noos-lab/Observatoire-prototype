@@ -243,7 +243,6 @@ def search_europepmc(term, page=1, pageSize=10):
         authors = hit.get("authorString", "")
         link = hit.get("doi")
         pmid = hit.get("pmid")
-        # Priorité à DOI, sinon PubMed, sinon EuropePMC
         if link:
             link_url = f"https://doi.org/{link}"
         elif pmid:
@@ -288,6 +287,38 @@ def search_clinicaltrials(term, max_studies=10):
             "NCT": nctid
         })
     return results
+
+# ---------------------------
+# Liens et instructions pour autres bases de données médicales
+# ---------------------------
+
+external_med_db_links = {
+    "PubMed": "https://pubmed.ncbi.nlm.nih.gov/",
+    "Embase": "https://www.embase.com/",
+    "Cochrane Library": "https://www.cochranelibrary.com/",
+    "Web of Science (WoS)": "https://www.webofscience.com/",
+    "Scopus": "https://www.scopus.com/",
+    "ClinicalTrials.gov": "https://clinicaltrials.gov/",
+    "Europe PMC": "https://europepmc.org/",
+    "LILACS": "https://lilacs.bvsalud.org/fr/",
+    "MedRxiv": "https://www.medrxiv.org/",
+    "BioRxiv": "https://www.biorxiv.org/",
+    "Google Scholar": "https://scholar.google.com/",
+}
+
+external_med_db_desc = {
+    "PubMed": "Base mondiale d'articles biomédicaux (accès libre).",
+    "Embase": "Grande base biomédicale, forte en pharmacologie et essais européens (accès payant/institutionnel).",
+    "Cochrane Library": "Référence pour les revues systématiques en santé (partiellement libre).",
+    "Web of Science (WoS)": "Base multidisciplinaire, suivi des citations (accès payant/institutionnel).",
+    "Scopus": "Grande base de citations et résumés en sciences (accès institutionnel).",
+    "ClinicalTrials.gov": "Registre mondial des essais cliniques (accès libre).",
+    "Europe PMC": "Base ouverte, forte sur la recherche européenne.",
+    "LILACS": "Littérature santé Amérique latine/Caraïbes (accès libre).",
+    "MedRxiv": "Prépublications en médecine.",
+    "BioRxiv": "Prépublications en biologie.",
+    "Google Scholar": "Moteur multidisciplinaire, accès libre.",
+}
 
 ##############################
 # Données publiques (données fictives)
@@ -375,7 +406,7 @@ if main_choice == "Tableau de bord":
                     st.experimental_rerun()
         st.caption("Ce tableau de bord est temporaire (lié à votre session).")
     # Liste des alertes études
-    st.markdown("## 🔔 Alertes études (PubMed/EuropePMC/ClinicalTrials.gov)")
+    st.markdown("## 🔔 Alertes études (bases médicales)")
     study_alerts = get_study_alerts()
     if not study_alerts:
         st.info("Aucune alerte sur des études n'est active. Utilisez l'onglet 'Études' pour en ajouter.")
@@ -405,6 +436,9 @@ if main_choice == "Tableau de bord":
                         st.markdown(f"- {t['Titre']}  \n_Sponsor:_ {t['Sponsor']} | _Pays:_ {t['Pays']} | _Date:_ {t['Date']}", unsafe_allow_html=True)
                 else:
                     st.info("Aucun essai clinique trouvé.")
+                st.markdown("**Bases complémentaires**")
+                for base in ["Embase", "Cochrane Library", "Web of Science (WoS)", "Scopus", "LILACS", "MedRxiv", "BioRxiv", "Google Scholar"]:
+                    st.markdown(f"- [{base}]({external_med_db_links[base]}) : {external_med_db_desc[base]}")
 
 ##############################
 # 2. Données publiques
@@ -488,7 +522,7 @@ elif main_choice == "Études":
     st.write(f"🔬 Vous avez choisi le domaine : {selected_field}")
 
     if selected_field == "Médecine":
-        st.markdown("#### Recherche d'études médicales multi-bases (PubMed, EuropePMC, ClinicalTrials.gov)")
+        st.markdown("#### Recherche d'études médicales multi-bases (PubMed, EuropePMC, ClinicalTrials.gov, autres)")
         search_term = st.text_input("🔎 Entrez un terme de recherche médical (ex : cancer, diabète, vaccination)", value="médecine")
         if 'med_studies_page' not in st.session_state:
             st.session_state.med_studies_page = 1
@@ -508,7 +542,9 @@ elif main_choice == "Études":
                     st.success(f"Alerte créée pour le terme '{search_term}' ({alert_mode}{' : ' + alert_email if alert_email else ''}). Vous la retrouverez dans votre tableau de bord.")
 
         # Résultats multi-bases avec pagination indépendante
-        tab1, tab2, tab3 = st.tabs(["PubMed", "Europe PMC", "ClinicalTrials.gov"])
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "PubMed", "Europe PMC", "ClinicalTrials.gov", "Autres bases"
+        ])
 
         with tab1:
             # Pagination PubMed
@@ -570,7 +606,6 @@ elif main_choice == "Études":
             if trials:
                 for idx, t in enumerate(trials):
                     st.markdown(f"**{ct_start+idx}. {t['Titre']}**  \n_Sponsor:_ {t['Sponsor']} | _Pays:_ {t['Pays']} | _Date:_ {t['Date']}", unsafe_allow_html=True)
-                # Note: L'API ne fournit pas le nombre total; on pagine "à la main"
                 col_prev, col_next = st.columns([1, 1])
                 with col_prev:
                     if st.session_state.ct_page > 1:
@@ -578,12 +613,16 @@ elif main_choice == "Études":
                             st.session_state.ct_page -= 1
                             st.experimental_rerun()
                 with col_next:
-                    # Fake pagination: on ne sait pas vraiment s'il y a plus, donc on laisse toujours le bouton
                     if st.button("Page suivante ➡️ (ClinicalTrials)", key="next_ct"):
                         st.session_state.ct_page += 1
                         st.experimental_rerun()
             else:
                 st.info("Aucun résultat trouvé dans ClinicalTrials.gov.")
+
+        with tab4:
+            st.markdown("**Bases complémentaires :**")
+            for base in ["Embase", "Cochrane Library", "Web of Science (WoS)", "Scopus", "LILACS", "MedRxiv", "BioRxiv", "Google Scholar"]:
+                st.markdown(f"- [{base}]({external_med_db_links[base]}) : {external_med_db_desc[base]}")
 
     else:
         st.info("Module d'exploration d'études à implémenter ici…")
@@ -733,5 +772,5 @@ elif main_choice == "Blockchains":
 ##############################
 st.markdown("""
 ---
-Prototype Streamlit – Tableau de bord, études multi-bases & alertes | Version 1.6
+Prototype Streamlit – Tableau de bord, études multi-bases & alertes | Version 1.7
 """)
