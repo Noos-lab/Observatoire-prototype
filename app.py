@@ -10,6 +10,7 @@ st.set_page_config(page_title="Observatoire Global", layout="wide")
 ##############################
 # Fonctions marché temps réel
 ##############################
+# (Identiques aux versions précédentes)
 
 @st.cache_data(ttl=600)
 def get_market_index_prices():
@@ -174,7 +175,7 @@ def get_commodities_prices(fmp_api_key=None):
         ]
 
 ##############################
-# Recherche PubMed paginée et alertes études
+# Recherche études médicales multi-bases
 ##############################
 
 def search_pubmed(term="medecine", retmax=10, retstart=0):
@@ -221,6 +222,72 @@ def fetch_pubmed_details(idlist):
             "Lien PubMed": link
         })
     return pd.DataFrame(articles)
+
+def search_europepmc(term, page=1, pageSize=10):
+    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+    params = {
+        "query": term,
+        "format": "json",
+        "pageSize": pageSize,
+        "page": page
+    }
+    r = requests.get(url, params=params)
+    if r.status_code != 200:
+        return [], 0
+    data = r.json()
+    hits = data.get("resultList", {}).get("result", [])
+    total = int(data.get("hitCount", 0))
+    articles = []
+    for hit in hits:
+        title = hit.get("title", "")
+        authors = hit.get("authorString", "")
+        link = hit.get("doi")
+        pmid = hit.get("pmid")
+        # Priorité à DOI, sinon PubMed, sinon EuropePMC
+        if link:
+            link_url = f"https://doi.org/{link}"
+        elif pmid:
+            link_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+        else:
+            link_url = hit.get("fullTextUrlList", [{}])[0].get("url", "")
+        title_md = f"[{title}]({link_url})" if title and link_url else title
+        articles.append({
+            "Titre": title_md,
+            "Auteurs": authors,
+            "Lien": link_url
+        })
+    return articles, total
+
+def search_clinicaltrials(term, max_studies=10):
+    url = "https://clinicaltrials.gov/api/query/study_fields"
+    params = {
+        "expr": term,
+        "fields": "NCTId,BriefTitle,Condition,LeadSponsorName,LocationCountry,StudyFirstSubmitDate",
+        "min_rnk": 1,
+        "max_rnk": max_studies,
+        "fmt": "json"
+    }
+    r = requests.get(url, params=params)
+    if r.status_code != 200:
+        return []
+    studies = r.json()["StudyFieldsResponse"]["StudyFields"]
+    results = []
+    for study in studies:
+        title = study["BriefTitle"][0] if study["BriefTitle"] else ""
+        nctid = study["NCTId"][0] if study["NCTId"] else ""
+        sponsor = study["LeadSponsorName"][0] if study["LeadSponsorName"] else ""
+        country = study["LocationCountry"][0] if study["LocationCountry"] else ""
+        date = study["StudyFirstSubmitDate"][0] if study["StudyFirstSubmitDate"] else ""
+        url_link = f"https://clinicaltrials.gov/study/{nctid}" if nctid else ""
+        title_md = f"[{title}]({url_link})" if title and url_link else title
+        results.append({
+            "Titre": title_md,
+            "Sponsor": sponsor,
+            "Pays": country,
+            "Date": date,
+            "NCT": nctid
+        })
+    return results
 
 ##############################
 # Données publiques (données fictives)
@@ -308,22 +375,36 @@ if main_choice == "Tableau de bord":
                     st.experimental_rerun()
         st.caption("Ce tableau de bord est temporaire (lié à votre session).")
     # Liste des alertes études
-    st.markdown("## 🔔 Alertes études (PubMed)")
+    st.markdown("## 🔔 Alertes études (PubMed/EuropePMC/ClinicalTrials.gov)")
     study_alerts = get_study_alerts()
     if not study_alerts:
         st.info("Aucune alerte sur des études n'est active. Utilisez l'onglet 'Études' pour en ajouter.")
     else:
         for idx, alert in enumerate(study_alerts):
             st.markdown(f"**Terme surveillé :** `{alert['term']}` &nbsp; | &nbsp; **Alerte par** : {alert['mode']}" + (f" ({alert['email']})" if alert['mode']=='Email' else ""))
-            # Simuler la détection d'une nouvelle étude (démo)
             with st.expander(f"Voir derniers résultats pour '{alert['term']}'"):
-                ids, total = search_pubmed(term=alert['term'], retmax=3, retstart=0)
+                st.markdown("**PubMed**")
+                ids, total = search_pubmed(term=alert['term'], retmax=2, retstart=0)
                 if ids:
                     df_pubmed = fetch_pubmed_details(ids)
                     for idx2, row in df_pubmed.iterrows():
                         st.markdown(f"- {row['Titre']}  \n_Auteurs:_ {row['Auteurs']}", unsafe_allow_html=True)
                 else:
-                    st.info("Aucune étude trouvée pour ce terme.")
+                    st.info("Aucune étude trouvée dans PubMed.")
+                st.markdown("**EuropePMC**")
+                articles, total_epmc = search_europepmc(term=alert['term'], page=1, pageSize=2)
+                if articles:
+                    for art in articles:
+                        st.markdown(f"- {art['Titre']}  \n_Auteurs:_ {art['Auteurs']}", unsafe_allow_html=True)
+                else:
+                    st.info("Aucune étude trouvée dans EuropePMC.")
+                st.markdown("**ClinicalTrials.gov**")
+                trials = search_clinicaltrials(term=alert['term'], max_studies=2)
+                if trials:
+                    for t in trials:
+                        st.markdown(f"- {t['Titre']}  \n_Sponsor:_ {t['Sponsor']} | _Pays:_ {t['Pays']} | _Date:_ {t['Date']}", unsafe_allow_html=True)
+                else:
+                    st.info("Aucun essai clinique trouvé.")
 
 ##############################
 # 2. Données publiques
@@ -397,7 +478,7 @@ elif main_choice == "Données publiques":
         st.info("Aucune donnée pour la seconde sélection.")
 
 ##############################
-# 3. Études (PubMed) avec création d'alerte
+# 3. Études (multi-bases) avec création d'alerte
 ##############################
 elif main_choice == "Études":
     st.header("🔬 Recherches et études scientifiques")
@@ -407,14 +488,14 @@ elif main_choice == "Études":
     st.write(f"🔬 Vous avez choisi le domaine : {selected_field}")
 
     if selected_field == "Médecine":
-        st.markdown("#### Recherche d'études PubMed en médecine")
+        st.markdown("#### Recherche d'études médicales multi-bases (PubMed, EuropePMC, ClinicalTrials.gov)")
         search_term = st.text_input("🔎 Entrez un terme de recherche médical (ex : cancer, diabète, vaccination)", value="médecine")
-        if 'pubmed_page' not in st.session_state:
-            st.session_state.pubmed_page = 1
-        per_page = 10
+        if 'med_studies_page' not in st.session_state:
+            st.session_state.med_studies_page = 1
+        per_page = 5
 
         # Bloc de création d'alerte
-        st.markdown("##### 🔔 Créer une alerte pour ce terme PubMed")
+        st.markdown("##### 🔔 Créer une alerte pour ce terme médical (toutes bases)")
         with st.form("create_study_alert"):
             alert_mode = st.selectbox("Voulez-vous recevoir l'alerte par e-mail ou dans votre tableau de bord ?", ["Tableau de bord", "Email"])
             alert_email = st.text_input("Email (si alerte par Email)", value="", disabled=(alert_mode != "Email"))
@@ -426,39 +507,84 @@ elif main_choice == "Études":
                     add_study_alert(term=search_term, mode=alert_mode, email=alert_email if alert_mode == "Email" else None)
                     st.success(f"Alerte créée pour le terme '{search_term}' ({alert_mode}{' : ' + alert_email if alert_email else ''}). Vous la retrouverez dans votre tableau de bord.")
 
-        if st.button("Lancer la recherche sur PubMed") or search_term:
-            if st.session_state.get("last_search_term", "") != search_term:
-                st.session_state.pubmed_page = 1
-                st.session_state.last_search_term = search_term
+        # Résultats multi-bases avec pagination indépendante
+        tab1, tab2, tab3 = st.tabs(["PubMed", "Europe PMC", "ClinicalTrials.gov"])
 
-            with st.spinner("Recherche sur PubMed..."):
-                page = st.session_state.pubmed_page
-                retstart = (page - 1) * per_page
-                ids, total = search_pubmed(term=search_term, retmax=per_page, retstart=retstart)
-                if ids:
-                    df_pubmed = fetch_pubmed_details(ids)
-                    if not df_pubmed.empty:
-                        start_idx = retstart+1
-                        end_idx = min(retstart+per_page, total)
-                        st.markdown(f"*Résultats {start_idx} à {end_idx} sur {total}*")
-                        for idx, row in df_pubmed.iterrows():
-                            st.markdown(f"**{start_idx+idx}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
-                        col_prev, col_next = st.columns([1, 1])
-                        with col_prev:
-                            if page > 1:
-                                if st.button("⬅️ Page précédente", key="prev_pubmed"):
-                                    st.session_state.pubmed_page -= 1
-                                    st.experimental_rerun()
-                        with col_next:
-                            if retstart + per_page < total:
-                                if st.button("Page suivante ➡️", key="next_pubmed"):
-                                    st.session_state.pubmed_page += 1
-                                    st.experimental_rerun()
-                    else:
-                        st.info("Aucun résultat trouvé (PubMed).")
-                else:
-                    st.info("Aucun résultat trouvé (PubMed).")
-        st.caption("Résultats issus de la base PubMed (10 par page, navigation possible).")
+        with tab1:
+            # Pagination PubMed
+            if 'pubmed_page' not in st.session_state:
+                st.session_state.pubmed_page = 1
+            ids, total = search_pubmed(term=search_term, retmax=per_page, retstart=(st.session_state.pubmed_page - 1) * per_page)
+            if ids:
+                df_pubmed = fetch_pubmed_details(ids)
+                start_idx = (st.session_state.pubmed_page-1)*per_page+1
+                end_idx = min(start_idx + per_page - 1, total)
+                st.markdown(f"*Résultats {start_idx} à {end_idx} sur {total}*")
+                for idx, row in df_pubmed.iterrows():
+                    st.markdown(f"**{start_idx+idx}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
+                col_prev, col_next = st.columns([1, 1])
+                with col_prev:
+                    if st.session_state.pubmed_page > 1:
+                        if st.button("⬅️ Page précédente (PubMed)", key="prev_pubmed"):
+                            st.session_state.pubmed_page -= 1
+                            st.experimental_rerun()
+                with col_next:
+                    if end_idx < total:
+                        if st.button("Page suivante ➡️ (PubMed)", key="next_pubmed"):
+                            st.session_state.pubmed_page += 1
+                            st.experimental_rerun()
+            else:
+                st.info("Aucun résultat trouvé dans PubMed.")
+
+        with tab2:
+            # Pagination EuropePMC
+            if 'epmc_page' not in st.session_state:
+                st.session_state.epmc_page = 1
+            articles, total_epmc = search_europepmc(term=search_term, page=st.session_state.epmc_page, pageSize=per_page)
+            start_idx = (st.session_state.epmc_page-1)*per_page+1
+            end_idx = min(start_idx + per_page - 1, total_epmc)
+            st.markdown(f"*Résultats {start_idx} à {end_idx} sur {total_epmc}*")
+            if articles:
+                for idx, art in enumerate(articles):
+                    st.markdown(f"**{start_idx+idx}. {art['Titre']}**  \n_Auteurs :_ {art['Auteurs']}", unsafe_allow_html=True)
+                col_prev, col_next = st.columns([1, 1])
+                with col_prev:
+                    if st.session_state.epmc_page > 1:
+                        if st.button("⬅️ Page précédente (EuropePMC)", key="prev_epmc"):
+                            st.session_state.epmc_page -= 1
+                            st.experimental_rerun()
+                with col_next:
+                    if end_idx < total_epmc:
+                        if st.button("Page suivante ➡️ (EuropePMC)", key="next_epmc"):
+                            st.session_state.epmc_page += 1
+                            st.experimental_rerun()
+            else:
+                st.info("Aucun résultat trouvé dans EuropePMC.")
+
+        with tab3:
+            # Pagination ClinicalTrials
+            if 'ct_page' not in st.session_state:
+                st.session_state.ct_page = 1
+            ct_start = (st.session_state.ct_page-1)*per_page+1
+            trials = search_clinicaltrials(term=search_term, max_studies=per_page)
+            if trials:
+                for idx, t in enumerate(trials):
+                    st.markdown(f"**{ct_start+idx}. {t['Titre']}**  \n_Sponsor:_ {t['Sponsor']} | _Pays:_ {t['Pays']} | _Date:_ {t['Date']}", unsafe_allow_html=True)
+                # Note: L'API ne fournit pas le nombre total; on pagine "à la main"
+                col_prev, col_next = st.columns([1, 1])
+                with col_prev:
+                    if st.session_state.ct_page > 1:
+                        if st.button("⬅️ Page précédente (ClinicalTrials)", key="prev_ct"):
+                            st.session_state.ct_page -= 1
+                            st.experimental_rerun()
+                with col_next:
+                    # Fake pagination: on ne sait pas vraiment s'il y a plus, donc on laisse toujours le bouton
+                    if st.button("Page suivante ➡️ (ClinicalTrials)", key="next_ct"):
+                        st.session_state.ct_page += 1
+                        st.experimental_rerun()
+            else:
+                st.info("Aucun résultat trouvé dans ClinicalTrials.gov.")
+
     else:
         st.info("Module d'exploration d'études à implémenter ici…")
 
@@ -607,5 +733,5 @@ elif main_choice == "Blockchains":
 ##############################
 st.markdown("""
 ---
-Prototype Streamlit – Tableau de bord personnalisé marchés et alertes études | Version 1.5
+Prototype Streamlit – Tableau de bord, études multi-bases & alertes | Version 1.6
 """)
