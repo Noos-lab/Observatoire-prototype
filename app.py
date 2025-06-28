@@ -10,7 +10,6 @@ st.set_page_config(page_title="Noos: information | connaissance | action", layou
 #########################
 # 1. FONCTIONS MARCHÉS
 #########################
-
 @st.cache_data(ttl=600)
 def get_market_index_prices():
     tickers = {
@@ -174,7 +173,7 @@ def get_commodities_prices(fmp_api_key=None):
         ]
 
 #########################
-# 2. FONCTIONS DONNÉES PUBLIQUES (données fictives)
+# 2. FONCTIONS DONNÉES PUBLIQUES
 #########################
 def load_data(source, country):
     filepath = f"data/{source}/{country}.json"
@@ -184,36 +183,155 @@ def load_data(source, country):
     return pd.DataFrame()
 
 #########################
-# 3. FONCTIONS BLOCKCHAIN (Démo)
+# 3. FONCTIONS ÉTUDES (PubMed, EuropePMC, ClinicalTrials, JSTOR, etc.)
 #########################
 
-def blockchain_dashboard():
-    st.header("⛓️ Exploration des réseaux Blockchains")
-    blockchains = ["Bitcoin", "Ethereum", "Tezos", "Solana", "Cardano", "Arbitrum", "Tron"]
-    selected_blockchain = st.selectbox("Choisissez une blockchain", blockchains)
-    st.write(f"(Démo) Vous avez choisi : {selected_blockchain}")
-    st.info("Module d'exploration blockchain à implémenter ici…")
-    st.markdown("---")
-    st.markdown("### 🔔 Créer une alerte pour ce réseau Blockchain")
-    with st.form(f"alert_form_{selected_blockchain}"):
-        alert_type = st.selectbox(
-            "Type d'alerte",
-            ["Nouvelle transaction importante", "Variation de prix", "Hausse brutale de fees", "Bloc miné", "Autre"]
-        )
-        threshold = st.text_input("Seuil / Mot-clé / Adresse (optionnel)")
-        email_alert = st.text_input("Email pour recevoir l'alerte")
-        submit_alert = st.form_submit_button("Créer l'alerte")
-        if submit_alert:
-            st.success(f"Alerte '{alert_type}' pour {selected_blockchain} enregistrée pour {email_alert} (simulation).")
+def search_pubmed(term, retmax=10, retstart=0):
+    url = (
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        f"?db=pubmed&term={term}&retmax={retmax}&retstart={retstart}&retmode=json"
+    )
+    r = requests.get(url)
+    r.raise_for_status()
+    result = r.json()["esearchresult"]
+    ids = result["idlist"]
+    count = int(result.get("count", len(ids)))
+    return ids, count
 
-#########################
-# 4. FONCTIONS ÉTUDES MÉDICALES ET SOCIALES (PLACEHOLDER)
-#########################
-def studies_dashboard():
-    st.header("🔬 Recherches et études scientifiques")
-    st.info("**Toutes les bases demandées sont intégrées ici, selon les fonctions définies plus haut.**\n\n"
-            "- PubMed, EuropePMC, ClinicalTrials, MedRxiv, BioRxiv, LILACS, JSTOR, Google Scholar, Cochrane, Embase, Scopus, WoS\n\n"
-            "⚠️ Pour le code complet des fonctions d'appel API et l'affichage détaillé, voir les versions précédentes ou demander la génération du code détaillé pour chaque base.")
+def fetch_pubmed_details(idlist):
+    if not idlist:
+        return pd.DataFrame()
+    ids = ",".join(idlist)
+    url = (
+        "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+        f"?db=pubmed&id={ids}&retmode=xml"
+    )
+    r = requests.get(url)
+    r.raise_for_status()
+    root = ET.fromstring(r.content)
+    articles = []
+    for art in root.findall(".//PubmedArticle"):
+        title = art.findtext(".//ArticleTitle", "")
+        pmid = art.findtext(".//PMID", "")
+        authors = []
+        for a in art.findall(".//Author"):
+            last = a.findtext("LastName")
+            first = a.findtext("ForeName")
+            if last and first:
+                authors.append(f"{first} {last}")
+            elif last:
+                authors.append(last)
+        authors_str = ", ".join(authors)
+        link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""
+        title_md = f"[{title}]({link})" if title and link else title
+        articles.append({
+            "Titre": title_md,
+            "Auteurs": authors_str,
+        })
+    return pd.DataFrame(articles)
+
+def search_europepmc(term, page=1, pageSize=10):
+    url = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+    params = {
+        "query": term,
+        "format": "json",
+        "pageSize": pageSize,
+        "page": page
+    }
+    r = requests.get(url, params=params)
+    if r.status_code != 200:
+        return pd.DataFrame(), 0
+    data = r.json()
+    hits = data.get("resultList", {}).get("result", [])
+    total = int(data.get("hitCount", 0))
+    articles = []
+    for hit in hits:
+        title = hit.get("title", "")
+        authors = hit.get("authorString", "")
+        link = hit.get("doi")
+        pmid = hit.get("pmid")
+        if link:
+            link_url = f"https://doi.org/{link}"
+        elif pmid:
+            link_url = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+        else:
+            link_url = hit.get("fullTextUrlList", [{}])[0].get("url", "")
+        title_md = f"[{title}]({link_url})" if title and link_url else title
+        articles.append({
+            "Titre": title_md,
+            "Auteurs": authors,
+        })
+    return pd.DataFrame(articles), total
+
+def search_clinicaltrials(term, max_studies=10):
+    url = "https://clinicaltrials.gov/api/query/study_fields"
+    params = {
+        "expr": term,
+        "fields": "NCTId,BriefTitle,Condition,LeadSponsorName,LocationCountry,StudyFirstSubmitDate",
+        "min_rnk": 1,
+        "max_rnk": max_studies,
+        "fmt": "json"
+    }
+    r = requests.get(url, params=params)
+    if r.status_code != 200:
+        return pd.DataFrame()
+    studies = r.json()["StudyFieldsResponse"]["StudyFields"]
+    results = []
+    for study in studies:
+        title = study["BriefTitle"][0] if study["BriefTitle"] else ""
+        nctid = study["NCTId"][0] if study["NCTId"] else ""
+        sponsor = study["LeadSponsorName"][0] if study["LeadSponsorName"] else ""
+        country = study["LocationCountry"][0] if study["LocationCountry"] else ""
+        date = study["StudyFirstSubmitDate"][0] if study["StudyFirstSubmitDate"] else ""
+        url_link = f"https://clinicaltrials.gov/study/{nctid}" if nctid else ""
+        title_md = f"[{title}]({url_link})" if title and url_link else title
+        authors = sponsor if sponsor else ""
+        articlestr = f"{authors} ({country}, {date})" if country or date else authors
+        results.append({
+            "Titre": title_md,
+            "Auteurs": articlestr,
+        })
+    return pd.DataFrame(results)
+
+def search_rxivist(term, server="medrxiv", max_results=10):
+    url = f"https://api.rxivist.org/v1/papers"
+    params = {
+        "q": term,
+        "server": server,
+        "limit": max_results
+    }
+    r = requests.get(url, params=params)
+    if r.status_code != 200:
+        return pd.DataFrame()
+    results = r.json().get("results", [])
+    articles = []
+    for art in results:
+        title = art.get("title", "")
+        authors = ", ".join([a.get("name", "") for a in art.get("authors", [])])
+        link = art.get("url", "")
+        title_md = f"[{title}]({link})" if title and link else title
+        articles.append({
+            "Titre": title_md,
+            "Auteurs": authors,
+        })
+    return pd.DataFrame(articles)
+
+def scholar_search_link(term):
+    return f"https://scholar.google.com/scholar?q={term.replace(' ', '+')}"
+
+def search_jstor(term):
+    return f"https://www.jstor.org/action/doBasicSearch?Query={term.replace(' ','+')}"
+
+def generic_db_search_link(term, base):
+    if base == "Cochrane Library":
+        return f"https://www.cochranelibrary.com/search?text={term.replace(' ','+')}"
+    if base == "Embase":
+        return f"https://www.embase.com/search/results?query={term.replace(' ','+')}"
+    if base == "Scopus":
+        return f"https://www.scopus.com/results/results.uri?sort=plf-f&src=s&sid=&sot=b&sdt=b&sl=0&origin=searchbasic&txGid=&searchterm1={term.replace(' ','+')}"
+    if base == "Web of Science (WoS)":
+        return f"https://www.webofscience.com/wos/woscc/summary/{term.replace(' ','+')}"
+    return "#"
 
 #########################
 # 5. TABLEAU DE BORD & ALERTES
@@ -263,7 +381,6 @@ main_choices = ["Tableau de bord", "Données publiques", "Études", "Marchés", 
 main_choice = st.radio("Sélectionnez un domaine :", main_choices, horizontal=True)
 st.markdown("---")
 
-# 1. Tableau de bord personnalisé et alertes études
 if main_choice == "Tableau de bord":
     st.header("📊 Votre tableau de bord personnalisé")
     portfolio_items = get_portfolio_items()
@@ -285,9 +402,8 @@ if main_choice == "Tableau de bord":
                     remove_from_portfolio(item['type'], item['id'])
                     st.experimental_rerun()
         st.caption("Ce tableau de bord est temporaire (lié à votre session).")
-    # Liste des alertes études
-    st.markdown("## 🔔 Alertes études (bases médicales)")
     study_alerts = get_study_alerts()
+    st.markdown("## 🔔 Alertes études (bases médicales)")
     if not study_alerts:
         st.info("Aucune alerte sur des études n'est active. Utilisez l'onglet 'Études' pour en ajouter.")
     else:
@@ -295,7 +411,6 @@ if main_choice == "Tableau de bord":
             st.markdown(f"**Terme surveillé :** `{alert['term']}` &nbsp; | &nbsp; **Alerte par** : {alert['mode']}" + (f" ({alert['email']})" if alert['mode']=='Email' else ""))
             st.info("Voir l'onglet Études pour les résultats multi-bases détaillés.")
 
-# 2. Données publiques
 elif main_choice == "Données publiques":
     st.header("📂 Données publiques")
     pays_options = [
@@ -364,11 +479,110 @@ elif main_choice == "Données publiques":
     elif compare:
         st.info("Aucune donnée pour la seconde sélection.")
 
-# 3. Études (multi-bases) avec création d'alerte
 elif main_choice == "Études":
-    studies_dashboard()
+    st.header("🔬 Recherches et études scientifiques")
+    domaines = ["Médecine", "Environnement", "Sciences sociales", "Économie", "Technologie"]
+    selected_field = st.selectbox("Domaine de recherche", domaines)
 
-# 4. Marchés (réintégré)
+    if selected_field == "Médecine":
+        st.markdown("#### Recherche d'études médicales multi-bases (PubMed, EuropePMC, ClinicalTrials.gov, MedRxiv, BioRxiv, Google Scholar, JSTOR, Cochrane, Embase, Scopus, WoS)")
+        search_term = st.text_input("🔎 Entrez un terme de recherche médical (ex : cancer, diabète, vaccination)", value="médecine")
+        per_page = 5
+
+        # Bloc de création d'alerte
+        st.markdown("##### 🔔 Créer une alerte pour ce terme médical (toutes bases)")
+        with st.form("create_study_alert"):
+            alert_mode = st.selectbox("Voulez-vous recevoir l'alerte par e-mail ou dans votre tableau de bord ?", ["Tableau de bord", "Email"])
+            alert_email = st.text_input("Email (si alerte par Email)", value="", disabled=(alert_mode != "Email"))
+            submit_alert = st.form_submit_button("Créer l'alerte")
+            if submit_alert:
+                if alert_mode == "Email" and not alert_email:
+                    st.warning("Veuillez saisir votre email pour recevoir l'alerte.")
+                else:
+                    add_study_alert(term=search_term, mode=alert_mode, email=alert_email if alert_mode == "Email" else None)
+                    st.success(f"Alerte créée pour le terme '{search_term}' ({alert_mode}{' : ' + alert_email if alert_email else ''}). Vous la retrouverez dans votre tableau de bord.")
+
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+            "PubMed", "Europe PMC", "ClinicalTrials.gov", "MedRxiv", "BioRxiv",
+            "Google Scholar", "JSTOR", "Cochrane", "Embase", "Scopus/WoS"
+        ])
+
+        with tab1:
+            ids, total = search_pubmed(term=search_term, retmax=per_page, retstart=0)
+            df_pubmed = fetch_pubmed_details(ids) if ids else pd.DataFrame()
+            st.markdown(f"*{total} résultats*")
+            if not df_pubmed.empty:
+                for idx, row in df_pubmed.iterrows():
+                    st.markdown(f"**{idx+1}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
+            else:
+                st.info("Aucun résultat trouvé dans PubMed.")
+
+        with tab2:
+            df_epmc, total_epmc = search_europepmc(term=search_term, page=1, pageSize=per_page)
+            st.markdown(f"*{total_epmc} résultats*")
+            if not df_epmc.empty:
+                for idx, row in df_epmc.iterrows():
+                    st.markdown(f"**{idx+1}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
+            else:
+                st.info("Aucun résultat trouvé dans EuropePMC.")
+
+        with tab3:
+            df_trials = search_clinicaltrials(term=search_term, max_studies=per_page)
+            if not df_trials.empty:
+                for idx, row in df_trials.iterrows():
+                    st.markdown(f"**{idx+1}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
+            else:
+                st.info("Aucun résultat trouvé dans ClinicalTrials.gov.")
+
+        with tab4:
+            df_medrxiv = search_rxivist(search_term, server="medrxiv", max_results=per_page)
+            if not df_medrxiv.empty:
+                for idx, row in df_medrxiv.iterrows():
+                    st.markdown(f"**{idx+1}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
+            else:
+                st.info("Aucun préprint trouvé dans MedRxiv.")
+
+        with tab5:
+            df_biorxiv = search_rxivist(search_term, server="biorxiv", max_results=per_page)
+            if not df_biorxiv.empty:
+                for idx, row in df_biorxiv.iterrows():
+                    st.markdown(f"**{idx+1}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
+            else:
+                st.info("Aucun préprint trouvé dans BioRxiv.")
+
+        with tab6:
+            scholar_link = scholar_search_link(search_term)
+            st.markdown(f"**[Voir les résultats sur Google Scholar]({scholar_link})**")
+            st.info("Google Scholar n'autorise pas de scraping automatisé. Cliquez pour voir les résultats.")
+
+        with tab7:
+            jstor_url = search_jstor(search_term)
+            st.markdown(f"**[Voir les résultats sur JSTOR]({jstor_url})**")
+            st.info("JSTOR n'a pas d'API libre. Cliquez pour voir les résultats (accès institutionnel ou partiel requis).")
+
+        with tab8:
+            st.markdown(f"**[Voir les résultats sur Cochrane Library]({generic_db_search_link(search_term, 'Cochrane Library')})**")
+            st.info("Cochrane Library ne propose pas d'API libre. Cliquez pour voir les résultats.")
+
+        with tab9:
+            st.markdown(f"**[Voir les résultats sur Embase]({generic_db_search_link(search_term, 'Embase')})**")
+            st.info("Embase ne propose pas d'API libre. Cliquez pour voir les résultats (accès institutionnel nécessaire).")
+
+        with tab10:
+            st.markdown(f"**[Voir les résultats sur Scopus]({generic_db_search_link(search_term, 'Scopus')})**\n\n"
+                        f"**[Voir les résultats sur Web of Science]({generic_db_search_link(search_term, 'Web of Science (WoS)')})**")
+            st.info("Scopus et Web of Science ne proposent pas d'API libre. Cliquez pour voir les résultats (accès institutionnel nécessaire).")
+
+    elif selected_field == "Sciences sociales":
+        st.markdown("#### Recherche JSTOR (sciences sociales et sciences humaines)")
+        search_term = st.text_input("🔎 Entrez un terme pour JSTOR", value="sociology")
+        jstor_url = search_jstor(search_term)
+        st.markdown(f"**[Voir les résultats sur JSTOR]({jstor_url})**")
+        st.info("Résultats JSTOR affichés sur leur site (accès institutionnel ou partiel requis).")
+
+    else:
+        st.info("Module d'exploration d'études à implémenter ici…")
+
 elif main_choice == "Marchés":
     st.header("🌍 Marchés financiers et cryptos")
     sous_options = ["Bourses", "Cryptos", "Bonds", "Commodities"]
@@ -485,7 +699,6 @@ elif main_choice == "Marchés":
             })
             st.success(f"{selected_com} ajoutée au tableau de bord !")
 
-# 5. Blockchains (réintégré)
 elif main_choice == "Blockchains":
     blockchain_dashboard()
 
