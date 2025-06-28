@@ -85,8 +85,10 @@ def fetch_pubmed_details(idlist):
                 authors.append(last)
         authors_str = ", ".join(authors)
         link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""
+        # Utiliser du markdown pour rendre le titre cliquable
+        title_md = f"[{title}]({link})" if title and link else title
         articles.append({
-            "Titre": title,
+            "Titre": title_md,
             "Auteurs": authors_str,
             "Lien PubMed": link
         })
@@ -194,11 +196,12 @@ elif main_choice == "Études":
                     if ids:
                         df_pubmed = fetch_pubmed_details(ids)
                         if not df_pubmed.empty:
-                            # Affichage sous forme de tableau avec liens cliquables
-                            def make_link(row):
-                                return f"[Ouvrir]({row['Lien PubMed']})" if row["Lien PubMed"] else "—"
-                            df_pubmed["Lien"] = df_pubmed.apply(make_link, axis=1)
-                            st.dataframe(df_pubmed[["Titre", "Auteurs", "Lien"]], use_container_width=True)
+                            # Affichage sous forme de tableau avec titres cliquables
+                            # Attention: st.dataframe n'affiche pas le markdown comme des liens,
+                            # il faut utiliser st.markdown ou st.write dans une boucle.
+                            for idx, row in df_pubmed.iterrows():
+                                st.markdown(f"**{idx+1}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
+                            st.caption("Clique sur un titre pour ouvrir l'étude dans PubMed.")
                         else:
                             st.info("Aucun résultat trouvé (PubMed).")
                     else:
@@ -206,7 +209,6 @@ elif main_choice == "Études":
             except Exception as e:
                 st.error(f"Erreur lors de la recherche PubMed : {e}")
         st.caption("Résultats issus de la base PubMed (10 premiers articles).")
-
     else:
         st.info("Module d'exploration d'études à implémenter ici…")
 
@@ -244,12 +246,4 @@ if main_choice == "Données publiques":
                         else:
                             st.warning("Ce cube ne contient aucun vecteur.")
                     else:
-                        st.warning("Impossible de récupérer le metadata pour ce cube.")
-        except Exception as e:
-            st.error(f"Erreur lors de la récupération dynamique : {e}")
-
-# ---- Pied de page ----
-st.markdown("""
----
-Prototype Streamlit – Données simulées + API StatCan + PubMed | Version 0.6
-""")
+                        st.warning
