@@ -105,23 +105,35 @@ if not data.empty:
 else:
     st.warning("Aucune donnée disponible pour cette combinaison pays/source.")
 
-# 🧪 Test manuel avec un vecteur connu (Québec – Taux de chômage)
-st.markdown("## 🧪 Test manuel avec un vecteur connu (Québec – Taux de chômage)")
-vector_test_id = "v123985190"
+# 🧪 Test dynamique avec vecteurs du Québec
 
-try:
-    df_test = get_vector_data(vector_test_id)
-    if not df_test.empty:
-        df_test_filtered = df_test[["REF_DATE", "GEO", "VALUE"]].rename(columns={
-            "REF_DATE": "Année",
-            "GEO": "Région",
-            "VALUE": "Taux de chômage (%)"
-        })
-        st.dataframe(df_test_filtered.head(10))
-    else:
-        st.error("Aucune donnée retournée pour ce vecteur.")
-except Exception as e:
-    st.error(f"Erreur lors du test du vecteur : {e}")
+st.markdown("## 🧪 Test dynamique – Données Statistique Canada (Québec)")
+
+# Liste des vecteurs de test
+vectors = {
+    "PIB – Produit intérieur brut (Québec)": "v108785809",
+    "Taux de chômage (Québec)": "v111900628",
+    "Taux d’emploi (Québec)": "v111900627",
+    "Espérance de vie (Québec)": "v68608521",
+    "Naissances vivantes (Québec)": "v5091434",
+    "Diplômés postsecondaires (Québec)": "v62815126"
+}
+
+selected_label = st.selectbox("Choisissez un indicateur test à afficher :", list(vectors.keys()))
+
+if selected_label:
+    vector_test_id = vectors[selected_label]
+    try:
+        df_test = get_vector_data(vector_test_id)
+        if not df_test.empty:
+            # Affichage dynamique des premières colonnes
+            st.markdown(f"### Résultats pour : {selected_label}")
+            st.dataframe(df_test.head(10))
+        else:
+            st.error("Aucune donnée retournée pour ce vecteur.")
+    except Exception as e:
+        st.error(f"Erreur lors de la récupération des données : {e}")
+
 
 # ---- Note pied de page ----
 st.markdown("""
