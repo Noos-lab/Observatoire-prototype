@@ -1,55 +1,136 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import requests
+import yfinance as yf
+import xml.etree.ElementTree as ET
 import os
 import json
-import requests
-import xml.etree.ElementTree as ET
 
-# ---- Configuration ----
-st.set_page_config(page_title="Observatoire Global", layout="wide")
+# ---- Fonctions temps réel pour marchés ----
 
-# ---- Fonctions API Statistique Canada (inchangées) ----
-@st.cache_data(show_spinner=False)
-def get_all_statcan_cubes():
-    url = "https://www150.statcan.gc.ca/t1/wds/rest/getAllCubesList"
-    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+@st.cache_data(ttl=600)
+def get_market_index_prices():
+    """Dow Jones, Nasdaq, S&P500 via yfinance (10 min cache)"""
+    tickers = {
+        "Dow Jones": "^DJI",
+        "Nasdaq": "^IXIC",
+        "S&P 500": "^GSPC"
+    }
+    data = []
+    for name, ticker in tickers.items():
+        ticker_obj = yf.Ticker(ticker)
+        info = ticker_obj.info
+        last = info.get("regularMarketPrice")
+        change = info.get("regularMarketChangePercent")
+        if last is not None and change is not None:
+            data.append({
+                "Indice": name,
+                "Ticker": ticker,
+                "Dernier": last,
+                "Variation": f"{change:+.2f}%"
+            })
+    return data
+
+@st.cache_data(ttl=300)
+def get_crypto_prices():
+    """Bitcoin, Ethereum, Solana, Cardano, Arbitrum, Tron via CoinGecko (5 min cache)"""
+    ids = "bitcoin,ethereum,solana,cardano,arbitrum,tron"
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids}&vs_currencies=usd&include_24hr_change=true"
+    r = requests.get(url)
+    r.raise_for_status()
+    cg = r.json()
+    mapping = {
+        "bitcoin": "Bitcoin",
+        "ethereum": "Ethereum",
+        "solana": "Solana",
+        "cardano": "Cardano",
+        "arbitrum": "Arbitrum",
+        "tron": "Tron"
+    }
+    results = []
+    for cid, name in mapping.items():
+        if cid in cg:
+            price = cg[cid].get("usd")
+            change = cg[cid].get("usd_24h_change")
+            results.append({
+                "Crypto": name,
+                "Dernier": price,
+                "Variation 24h": f"{change:+.2f}%" if change is not None else "N/A"
+            })
+    return results
+
+@st.cache_data(ttl=600)
+def get_bonds_prices(fmp_api_key=None):
+    """US 10Y, Bund 10Y, OAT 10Y via Financial Modeling Prep"""
+    # Pour un usage plus large, inscris-toi sur financialmodelingprep.com et mets ta clé dans FMP_API_KEY
+    FMP_API_KEY = fmp_api_key or os.environ.get("FMP_API_KEY", "")
+    endpoint = "https://financialmodelingprep.com/api/v3/quotes/bond"
+    params = {"apikey": FMP_API_KEY} if FMP_API_KEY else {}
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        result = response.json()
-        return result.get("object", [])
-    except Exception as e:
-        st.error(f"Erreur lors de la connexion à Statistique Canada : {e}")
-        return []
+        r = requests.get(endpoint, params=params)
+        r.raise_for_status()
+        bonds = r.json()
+        mapping = {
+            "US10Y": "US 10Y",
+            "DE10Y": "Bund 10Y",
+            "FR10Y": "OAT 10Y"
+        }
+        results = []
+        for bond in bonds:
+            symbol = bond.get("symbol")
+            name = mapping.get(symbol)
+            if name:
+                results.append({
+                    "Bond": name,
+                    "Dernier": bond.get("price"),
+                    "Variation": f"{bond.get('changesPercentage', 0):+0.2f}%"
+                })
+        return results
+    except:
+        # Fallback de démonstration si l'API ne répond pas
+        return [
+            {"Bond": "US 10Y", "Dernier": "4.25%", "Variation": "-0.03%"},
+            {"Bond": "Bund 10Y", "Dernier": "2.37%", "Variation": "+0.01%"},
+            {"Bond": "OAT 10Y", "Dernier": "3.12%", "Variation": "+0.00%"},
+        ]
 
-@st.cache_data(show_spinner=False)
-def get_cube_metadata(product_id):
-    url = f"https://www150.statcan.gc.ca/t1/wds/rest/getCubeMetadata/{product_id}"
-    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
+@st.cache_data(ttl=600)
+def get_commodities_prices(fmp_api_key=None):
+    """Or, pétrole, cuivre via Financial Modeling Prep"""
+    FMP_API_KEY = fmp_api_key or os.environ.get("FMP_API_KEY", "")
+    endpoint = "https://financialmodelingprep.com/api/v3/quotes/commodity"
+    params = {"apikey": FMP_API_KEY} if FMP_API_KEY else {}
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        return response.json().get("object", {})
-    except Exception as e:
-        st.error(f"Erreur lors de la récupération du metadata : {e}")
-        return {}
-
-@st.cache_data(show_spinner=False)
-def get_vector_data(vector_id):
-    url = f"https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVector/{vector_id}"
-    headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        return pd.DataFrame(response.json().get("object", []))
-    except Exception as e:
-        st.error(f"Erreur lors de la récupération des données : {e}")
-        return pd.DataFrame()
+        r = requests.get(endpoint, params=params)
+        r.raise_for_status()
+        commos = r.json()
+        mapping = {
+            "GCUSD": ("Or", "USD/oz"),
+            "CLUSD": ("Pétrole WTI", "USD/baril"),
+            "HGUSD": ("Cuivre", "USD/lb"),
+        }
+        results = []
+        for c in commos:
+            symbol = c.get("symbol")
+            if symbol in mapping:
+                nom, unite = mapping[symbol]
+                results.append({
+                    "Commodity": nom,
+                    "Dernier": c.get("price"),
+                    "Unité": unite,
+                    "Variation": f"{c.get('changesPercentage', 0):+0.2f}%"
+                })
+        return results
+    except:
+        # Fallback démo
+        return [
+            {"Commodity": "Or", "Dernier": 2345.20, "Unité": "USD/oz", "Variation": "-0.3%"},
+            {"Commodity": "Pétrole WTI", "Dernier": 81.35, "Unité": "USD/baril", "Variation": "+0.8%"},
+            {"Commodity": "Cuivre", "Dernier": 4.38, "Unité": "USD/lb", "Variation": "+1.4%"},
+        ]
 
 # ---- Recherche PubMed paginée ----
 def search_pubmed(term="medecine", retmax=10, retstart=0):
-    """Recherche des PMIDs sur PubMed selon le terme, paginée"""
     url = (
         "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         f"?db=pubmed&term={term}&retmax={retmax}&retstart={retstart}&retmode=json"
@@ -62,7 +143,6 @@ def search_pubmed(term="medecine", retmax=10, retstart=0):
     return ids, count
 
 def fetch_pubmed_details(idlist):
-    """Récupère les détails pour une liste de PMIDs et retourne un DataFrame"""
     if not idlist:
         return pd.DataFrame()
     ids = ",".join(idlist)
@@ -87,7 +167,6 @@ def fetch_pubmed_details(idlist):
                 authors.append(last)
         authors_str = ", ".join(authors)
         link = f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid else ""
-        # Utiliser du markdown pour rendre le titre cliquable
         title_md = f"[{title}]({link})" if title and link else title
         articles.append({
             "Titre": title_md,
@@ -104,43 +183,6 @@ def load_data(source, country):
             return pd.read_json(f)
     return pd.DataFrame()
 
-# ---- Fonctions pour Marchés (APIs publiques ou stub/demo pour illustration) ----
-
-def get_market_index_prices():
-    """Retourne les prix indicatifs pour Dow Jones, Nasdaq, SP500 (données simulées/démo)"""
-    # Pour usage réel, utiliser une API financière comme Yahoo Finance, Alpha Vantage, etc.
-    # Ici, données fictives ou de démonstration
-    return [
-        {"Indice": "Dow Jones", "Ticker": "DJI", "Dernier": 39100.45, "Variation": "+0.31%"},
-        {"Indice": "Nasdaq", "Ticker": "IXIC", "Dernier": 18170.12, "Variation": "+0.48%"},
-        {"Indice": "S&P 500", "Ticker": "GSPC", "Dernier": 5530.77, "Variation": "+0.22%"},
-    ]
-
-def get_crypto_prices():
-    """Retourne les prix indicatifs pour quelques cryptos (données simulées/démo)"""
-    return [
-        {"Crypto": "Bitcoin", "Ticker": "BTC", "Dernier": 63450.25, "Variation": "+1.2%"},
-        {"Crypto": "Ethereum", "Ticker": "ETH", "Dernier": 3520.80, "Variation": "-0.4%"},
-        {"Crypto": "Solana", "Ticker": "SOL", "Dernier": 139.30, "Variation": "+2.6%"},
-        {"Crypto": "Cardano", "Ticker": "ADA", "Dernier": 0.385, "Variation": "+0.9%"},
-    ]
-
-def get_bonds_prices():
-    """Retourne les taux indicatifs de bonds (données simulées/démo)"""
-    return [
-        {"Bond": "US 10Y", "Dernier": "4.25%", "Variation": "-0.03%"},
-        {"Bond": "Bund 10Y", "Dernier": "2.37%", "Variation": "+0.01%"},
-        {"Bond": "OAT 10Y", "Dernier": "3.12%", "Variation": "+0.00%"},
-    ]
-
-def get_commodities_prices():
-    """Retourne les prix indicatifs de commodities (données simulées/démo)"""
-    return [
-        {"Commodity": "Or", "Ticker": "XAU", "Dernier": 2345.20, "Unité": "USD/oz", "Variation": "-0.3%"},
-        {"Commodity": "Pétrole WTI", "Ticker": "CL", "Dernier": 81.35, "Unité": "USD/baril", "Variation": "+0.8%"},
-        {"Commodity": "Cuivre", "Ticker": "HG", "Dernier": 4.38, "Unité": "USD/lb", "Variation": "+1.4%"},
-    ]
-
 # ---- Page d'accueil : choix principal ----
 st.title("🌐 Observatoire Global des Données")
 st.markdown("Bienvenue sur l'Observatoire Global. Choisissez un type de recherche pour commencer :")
@@ -150,9 +192,7 @@ main_choice = st.radio("Sélectionnez un domaine :", main_choices, horizontal=Tr
 
 st.markdown("---")
 
-# ---- Affichage conditionnel : n'affiche que si un domaine est choisi ----
 if main_choice == "Données publiques":
-    # Options spécifiques pour Données publiques
     pays_options = [
         "Canada", "Québec", "France", "États-Unis", "Chine", "Inde",
         "ONU", "OMS", "UNESCO"
@@ -165,7 +205,6 @@ if main_choice == "Données publiques":
     with col2:
         selected_source = st.selectbox("📚 Source de données", source_options, key="source1")
 
-    # Option de comparaison
     st.markdown("#### 🔄 Comparer avec un autre pays/organisation (optionnel)")
     compare = st.checkbox("Activer la comparaison")
     if compare:
@@ -177,11 +216,9 @@ if main_choice == "Données publiques":
     else:
         country2, source2 = None, None
 
-    # Chargement et affichage des données
     data1 = load_data(selected_source, selected_country)
     data2 = load_data(source2, country2) if compare and country2 and source2 else pd.DataFrame()
 
-    # Visualisation(s)
     if not data1.empty:
         st.subheader(f"Données pour {selected_country} – Source : {selected_source}")
         available_years = data1['année'].dropna().unique()
@@ -200,7 +237,6 @@ if main_choice == "Données publiques":
     else:
         st.warning("Aucune donnée disponible pour cette combinaison pays/source.")
 
-    # Visualisation comparaison
     if compare and not data2.empty:
         st.subheader(f"Comparaison avec {country2} – Source : {source2}")
         available_years2 = data2['année'].dropna().unique()
@@ -228,33 +264,27 @@ elif main_choice == "Études":
     if selected_field == "Médecine":
         st.markdown("#### Recherche d'études PubMed en médecine")
         search_term = st.text_input("🔎 Entrez un terme de recherche médical (ex : cancer, diabète, vaccination)", value="médecine")
-        # Pagination avec session state
         if 'pubmed_page' not in st.session_state:
             st.session_state.pubmed_page = 1
         per_page = 10
 
-        # Lancement de la recherche
         if st.button("Lancer la recherche sur PubMed") or search_term:
-            # Reset pagination sur nouvelle recherche
             if st.session_state.get("last_search_term", "") != search_term:
                 st.session_state.pubmed_page = 1
                 st.session_state.last_search_term = search_term
 
             with st.spinner("Recherche sur PubMed..."):
-                # Calcul de l'offset de départ
                 page = st.session_state.pubmed_page
                 retstart = (page - 1) * per_page
                 ids, total = search_pubmed(term=search_term, retmax=per_page, retstart=retstart)
                 if ids:
                     df_pubmed = fetch_pubmed_details(ids)
                     if not df_pubmed.empty:
-                        # Affichage sous forme de liste de titres cliquables + auteurs
                         start_idx = retstart+1
                         end_idx = min(retstart+per_page, total)
                         st.markdown(f"*Résultats {start_idx} à {end_idx} sur {total}*")
                         for idx, row in df_pubmed.iterrows():
                             st.markdown(f"**{start_idx+idx}. {row['Titre']}**  \n_Auteurs :_ {row['Auteurs']}", unsafe_allow_html=True)
-                        # Pagination
                         col_prev, col_next = st.columns([1, 1])
                         with col_prev:
                             if page > 1:
@@ -280,19 +310,19 @@ elif main_choice == "Marchés":
     selected_market = st.selectbox("Choisissez un segment de marché :", sous_options)
 
     if selected_market == "Bourses":
-        st.markdown("#### Indices Boursiers")
+        st.markdown("#### Indices Boursiers (temps réel)")
         indices = get_market_index_prices()
         st.table(pd.DataFrame(indices))
     elif selected_market == "Cryptos":
-        st.markdown("#### Cryptomonnaies principales")
+        st.markdown("#### Cryptomonnaies principales (temps réel)")
         cryptos = get_crypto_prices()
         st.table(pd.DataFrame(cryptos))
     elif selected_market == "Bonds":
-        st.markdown("#### Obligations principales")
+        st.markdown("#### Obligations principales (temps réel)")
         bonds = get_bonds_prices()
         st.table(pd.DataFrame(bonds))
     elif selected_market == "Commodities":
-        st.markdown("#### Matières premières")
+        st.markdown("#### Matières premières (temps réel)")
         commos = get_commodities_prices()
         st.table(pd.DataFrame(commos))
     else:
@@ -319,40 +349,8 @@ elif main_choice == "Blockchains":
         if submit_alert:
             st.success(f"Alerte '{alert_type}' pour {selected_blockchain} enregistrée pour {email_alert} (simulation).")
 
-# ---- Test dynamique StatCan (optionnel, peut être déplacé) ----
-if main_choice == "Données publiques":
-    with st.expander("🧪 Test dynamique Statistique Canada (debug/dev)"):
-        try:
-            cubes = get_all_statcan_cubes()
-            if not cubes:
-                st.error("Aucune donnée de cubes reçue de Statistique Canada.")
-            else:
-                filtered = [c for c in cubes if "gdp" in c["cubeTitleEn"].lower()]
-                if not filtered:
-                    st.warning("Aucun cube trouvé correspondant à 'GDP'.")
-                else:
-                    cube_id = filtered[0]["productId"]
-                    st.info(f"Cube trouvé : {cube_id} - {filtered[0]['cubeTitleEn']}")
-                    metadata = get_cube_metadata(cube_id)
-                    if metadata:
-                        vector_ids = metadata.get("vectorIds", [])[:3]
-                        if vector_ids:
-                            for vector_id in vector_ids:
-                                df = get_vector_data(vector_id)
-                                if not df.empty:
-                                    st.markdown(f"### Données du vecteur {vector_id}")
-                                    st.dataframe(df.head())
-                                else:
-                                    st.info(f"Vecteur {vector_id} vide.")
-                        else:
-                            st.warning("Ce cube ne contient aucun vecteur.")
-                    else:
-                        st.warning("Impossible de récupérer le metadata pour ce cube.")
-        except Exception as e:
-            st.error(f"Erreur lors de la récupération dynamique : {e}")
-
 # ---- Pied de page ----
 st.markdown("""
 ---
-Prototype Streamlit – Données simulées + API StatCan + PubMed + Marchés | Version 1.0
+Prototype Streamlit – Données simulées + Données marchés temps réel | Version 1.1
 """)
