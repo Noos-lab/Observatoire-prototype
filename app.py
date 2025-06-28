@@ -9,18 +9,22 @@ import requests
 st.set_page_config(page_title="Observatoire Global", layout="wide")
 st.title("🌐 Observatoire Global des Données Publiques")
 
-# ---- API Statistique Canada ----
+# ---- API Statistique Canada corrigée ----
 @st.cache_data(show_spinner=False)
 def get_all_statcan_cubes():
     url = "https://www150.statcan.gc.ca/t1/wds/rest/getAllCubesList"
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0"
+    }
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         result = response.json()
         if "object" in result:
             return result["object"]
         else:
-            st.error("Réponse inattendue de Statistique Canada.")
+            st.error("Réponse inattendue de Statistique Canada (aucun champ 'object').")
             return []
     except Exception as e:
         st.error(f"Erreur lors de la connexion à Statistique Canada : {e}")
@@ -29,8 +33,12 @@ def get_all_statcan_cubes():
 @st.cache_data(show_spinner=False)
 def get_cube_metadata(product_id):
     url = f"https://www150.statcan.gc.ca/t1/wds/rest/getCubeMetadata/{product_id}"
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0"
+    }
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         return response.json().get("object", {})
     except Exception as e:
@@ -40,8 +48,12 @@ def get_cube_metadata(product_id):
 @st.cache_data(show_spinner=False)
 def get_vector_data(vector_id):
     url = f"https://www150.statcan.gc.ca/t1/wds/rest/getDataFromVector/{vector_id}"
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0"
+    }
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         return pd.DataFrame(response.json().get("object", []))
     except Exception as e:
@@ -66,55 +78,41 @@ source_options = ["Banque mondiale", "OMS", "UNESCO"]
 selected_country = st.selectbox("🌍 Choisissez un pays ou une organisation", pays_options)
 selected_source = st.selectbox("📚 Source de données", source_options)
 
-# ---- Affichage des données ----
+# ---- Affichage des données simulées ----
 data = load_data(selected_source, selected_country)
 
 if not data.empty:
     st.subheader(f"Données pour {selected_country} – Source : {selected_source}")
 
-    # Filtres
     available_years = data['année'].dropna().unique()
     selected_year = st.slider("📅 Filtrer par année", int(min(available_years)), int(max(available_years)), int(max(available_years)))
     filtered_data = data[data['année'] == selected_year]
 
-    # Affichage tableau + graphique
     st.dataframe(filtered_data)
-
     fig = px.bar(filtered_data, x="indicateur", y="valeur", color="indicateur", title=f"Indicateurs en {selected_year}")
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.warning("Aucune donnée disponible pour cette combinaison pays/source.")
 
-# ---- TEST dynamique StatCan ----
-
+# ---- Test dynamique StatCan ----
 st.markdown("## 🧪 Test dynamique Statistique Canada")
 
 try:
-    # 1. Récupérer tous les cubes
     cubes = get_all_statcan_cubes()
 
     if not cubes:
         st.error("Aucune donnée de cubes reçue de Statistique Canada.")
     else:
-        # Chercher les cubes contenant 'gdp'
-        filtered = [
-            c for c in cubes
-            if "gdp" in c["cubeTitleEn"].lower()
-        ]
-
+        filtered = [c for c in cubes if "gdp" in c["cubeTitleEn"].lower()]
         if not filtered:
             st.warning("Aucun cube trouvé correspondant à 'GDP'.")
         else:
-            # Prendre le premier cube trouvé
             cube_id = filtered[0]["productId"]
             st.info(f"Cube trouvé : {cube_id} - {filtered[0]['cubeTitleEn']}")
 
-            # Récupérer ses métadonnées
             metadata = get_cube_metadata(cube_id)
-
             if metadata:
                 vector_ids = metadata.get("vectorIds", [])[:3]
-
                 if vector_ids:
                     for vector_id in vector_ids:
                         df = get_vector_data(vector_id)
@@ -130,9 +128,8 @@ try:
 except Exception as e:
     st.error(f"Erreur lors de la récupération dynamique : {e}")
 
-
 # ---- Note pied de page ----
 st.markdown("""
 ---
-Prototype Streamlit – Données simulées + API StatCan | Version 0.3
+Prototype Streamlit – Données simulées + API StatCan | Version 0.4
 """)
